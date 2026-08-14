@@ -99,7 +99,7 @@ local function updatePlayerESP(player)
     end
 end
 
--- Основной легкий цикл
+-- Основной цикл обновления подсветки
 task.spawn(function()
     while true do
         task.wait(0.2)
@@ -116,6 +116,8 @@ task.spawn(function()
 end)
 
 Players.PlayerRemoving:Connect(removeHighlight)
+
+
 -- ========================================================
 -- ПУНКТ 2: ПОДСВЕТКА ОРУЖИЯ (ESP WEAPON)
 -- ========================================================
@@ -127,7 +129,6 @@ Translations.EN.GunESPButton = "ESP WEAPON"
 
 _G.GunESP = true
 
-local SheriffColor = Color3.fromRGB(0, 0, 255)
 local activeGunHighlight = nil
 
 local function clearGunESP()
@@ -172,8 +173,9 @@ task.spawn(function()
         updateGunESP()
     end
 end)
+
 -- ========================================================
--- ПУНКТ 3: АВТО НАВОДКА (AUTO-GUIDANCE)
+-- ПУНКТ 3: АВТО НАВОДКА И ВЫСТРЕЛ (AUTO-GUIDANCE & SHOOT)
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -186,7 +188,7 @@ Translations.RU.AutoGuidanceButton = "авто наводка"
 Translations.EN.AutoGuidanceButton = "auto-guidance"
 
 _G.AimbotEnabled = false
-_G.AimbotSmoothness = 0.2 -- Плавность (чем больше, тем быстрее наводка)
+_G.AimbotSmoothness = 0.3
 
 -- Поиск цели в зависимости от вашей роли
 local function getAimbotTarget()
@@ -207,7 +209,7 @@ local function getAimbotTarget()
                 local targetRole = getMM2Role(player)
                 local shouldTarget = false
                 
-                -- Шериф целится только в Мардера, Мардер — во всех мирных/шерифов
+                -- Шериф целится в Мардера, Мардер — во всех остальных
                 if myRole == "Sheriff" and targetRole == "Murderer" then
                     shouldTarget = true
                 elseif myRole == "Murderer" and targetRole ~= "Murderer" then
@@ -227,22 +229,41 @@ local function getAimbotTarget()
     return bestTarget
 end
 
--- Плавный поворот камеры при включенном Аимботе
+-- Плавный поворот камеры и автоматический выстрел
 RunService.RenderStepped:Connect(function()
-    if _G.AimbotEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        local target = getAimbotTarget()
-        if target then
-            local targetCFrame = CFrame.new(Camera.CFrame.Position, target.Position)
-            Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, _G.AimbotSmoothness)
+    if _G.AimbotEnabled and LocalPlayer.Character then
+        local myChar = LocalPlayer.Character
+        local hum = myChar:FindFirstChildOfClass("Humanoid")
+        local hrp = myChar:FindFirstChild("HumanoidRootPart")
+
+        if hrp and hum and hum.Health > 0 then
+            local target = getAimbotTarget()
+            if target then
+                -- Поворот камеры на цель
+                local targetCFrame = CFrame.new(Camera.CFrame.Position, target.Position)
+                Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, _G.AimbotSmoothness)
+
+                -- Автоматический выстрел для Шерифа
+                if getMM2Role(LocalPlayer) == "Sheriff" then
+                    local gun = myChar:FindFirstChild("Gun") or (LocalPlayer:FindFirstChild("Backpack") and LocalPlayer.Backpack:FindFirstChild("Gun"))
+                    if gun then
+                        if gun.Parent ~= myChar then
+                            hum:EquipTool(gun)
+                        end
+                        gun:Activate()
+                    end
+                end
+            end
         end
     end
 end)
 -- ========================================================
--- ПУНКТ 4: АВТОФАРМ И СКОРОСТЬ (AUTO-FARM & SPEED)
+-- ПУНКТ 4: АВТОФАРМ ПОД КАРТОЙ И СКОРОСТЬ (UNDERGROUND FARM & NOCLIP)
 -- ========================================================
 
 local Workspace = game:GetService("Workspace")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
 Translations.RU.AutoFarmButton = "авто-фарм"
@@ -251,26 +272,34 @@ Translations.RU.SpeedLabel = "Скорость персонажа"
 Translations.EN.SpeedLabel = "Player Speed"
 
 _G.AutoFarm = false
-_G.FarmSpeed = 20 -- Скорость по умолчанию (в Roblox стандартная = 16)
+_G.FarmSpeed = 20
 
--- 1. Постоянное обновление скорости бега персонажа
+-- 1. Noclip (отключение столкновений с блоками при фарме под картой)
+RunService.Stepped:Connect(function()
+    if _G.AutoFarm and LocalPlayer.Character then
+        for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end
+end)
+
+-- 2. Принудительное назначение скорости бега
 task.spawn(function()
     while true do
         task.wait(0.2)
         local char = LocalPlayer.Character
         if char then
             local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health > 0 then
-                -- Принудительно задаем скорость персонажу
-                if _G.FarmSpeed and _G.FarmSpeed >= 16 then
-                    hum.WalkSpeed = _G.FarmSpeed
-                end
+            if hum and hum.Health > 0 and _G.FarmSpeed and _G.FarmSpeed >= 16 then
+                hum.WalkSpeed = _G.FarmSpeed
             end
         end
     end
 end)
 
--- 2. Функция поиска ближайшей монеты на карте
+-- 3. Поиск ближайшей монеты на карте
 local function getNearestCoin()
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
@@ -279,7 +308,6 @@ local function getNearestCoin()
     local nearestCoin = nil
     local minDistance = math.huge
 
-    -- Поиск контейнера монет
     for _, obj in ipairs(Workspace:GetChildren()) do
         if obj.Name == "CoinContainer" or obj:FindFirstChild("CoinContainer") then
             local container = obj.Name == "CoinContainer" and obj or obj:FindFirstChild("CoinContainer")
@@ -297,47 +325,41 @@ local function getNearestCoin()
     return nearestCoin
 end
 
--- 3. Безопасный автофарм через нативный MoveTo (без вылетов и багов камеры)
+-- 4. Телепортация под карту прямо под монеты
 task.spawn(function()
     while true do
-        task.wait(0.1)
+        task.wait(0.05)
         if _G.AutoFarm then
             local char = LocalPlayer.Character
-            if char then
-                local hum = char:FindFirstChildOfClass("Humanoid")
-                local root = char:FindFirstChild("HumanoidRootPart")
-                
-                if hum and hum.Health > 0 and root then
-                    local coin = getNearestCoin()
-                    if coin then
-                        -- Персонаж нормально бежит к монете с установленной скоростью WalkSpeed
-                        hum:MoveTo(coin.Position)
-                        
-                        -- Ждем прибытия к монете или подбора
-                        local startTime = tick()
-                        repeat
-                            task.wait(0.1)
-                        until not _G.AutoFarm or not coin or not coin.Parent or coin.Transparency == 1 or (root.Position - coin.Position).Magnitude < 3 or (tick() - startTime) > 3
-                    end
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+            if root and hum and hum.Health > 0 then
+                local coin = getNearestCoin()
+                if coin then
+                    root.CFrame = coin.CFrame * CFrame.new(0, -2.5, 0)
                 end
             end
         end
     end
 end)
 -- ========================================================
--- ПУНКТ 5: НЕВИДИМОСТЬ (INVISIBILITY)
+-- ПУНКТ 5: НЕВИДИМОСТЬ И АВТО-ПЕРЕЗАХОД (INVISIBILITY & AUTO-REJOIN)
 -- ========================================================
 
 local Players = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
+local GuiService = game:GetService("GuiService")
 local LocalPlayer = Players.LocalPlayer
 
 Translations.RU.InvisButton = "невидимость"
 Translations.EN.InvisButton = "Invisibility"
 
 _G.Invisibility = false
+_G.AutoRejoin = true
 local PinkColor = Color3.fromRGB(255, 105, 180)
 
--- Безопасная функция управления невидимостью без взлета модели
+-- Безопасная невидимость без багов модели
 local function setInvisibility(state)
     _G.Invisibility = state
     local char = LocalPlayer.Character
@@ -346,7 +368,7 @@ local function setInvisibility(state)
     local highlight = char:FindFirstChild("Self_Invis_Highlight")
 
     if state then
-        -- 1. Розовый силуэт для владельца скрипта, чтобы не потерять персонажа
+        -- Розовый силуэт для удобства владельца
         if not highlight then
             highlight = Instance.new("Highlight")
             highlight.Name = "Self_Invis_Highlight"
@@ -358,7 +380,7 @@ local function setInvisibility(state)
             highlight.Parent = char
         end
 
-        -- 2. Делаем части тела прозрачными
+        -- Делаем части тела прозрачными
         for _, part in ipairs(char:GetDescendants()) do
             if (part:IsA("BasePart") or part:IsA("Decal")) and part.Name ~= "HumanoidRootPart" then
                 part.LocalTransparencyModifier = 0.8
@@ -378,12 +400,67 @@ local function setInvisibility(state)
     end
 end
 
--- Автоматический сброс при перерождении (смерти)
+-- Автоматический сброс невидимости при перерождении
 LocalPlayer.CharacterAdded:Connect(function()
     _G.Invisibility = false
 end)
+
+-- Авто-перезаход на сервер при кике или вылете
+GuiService.ErrorMessageChanged:Connect(function()
+    if _G.AutoRejoin then
+        task.wait(1)
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    end
+end)
 -- ========================================================
--- ПУНКТ 6: СБОРКА ИНТЕРФЕЙСА RAYFIELD
+-- ПУНКТ 6: УВЕЛИЧЕНИЕ ХИТБОКСА МАРДЕРА (HITBOX EXPANDER)
+-- ========================================================
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+_G.HitboxEnabled = false
+_G.HitboxSize = 10
+_G.HitboxTransparency = 0.7
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if _G.HitboxEnabled then
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and getMM2Role(player) == "Murderer" then
+                    local char = player.Character
+                    if char then
+                        local hrp = char:FindFirstChild("HumanoidRootPart")
+                        if hrp then
+                            hrp.Size = Vector3.new(_G.HitboxSize, _G.HitboxSize, _G.HitboxSize)
+                            hrp.Transparency = _G.HitboxTransparency
+                            hrp.Color = Color3.fromRGB(255, 0, 0)
+                            hrp.Material = Enum.Material.ForceField
+                            hrp.CanCollide = false
+                        end
+                    end
+                end
+            end
+        else
+            -- Сброс размеров хитбокса
+            for _, player in ipairs(Players:GetPlayers()) do
+                local char = player.Character
+                if char then
+                    local hrp = char:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        hrp.Size = Vector3.new(2, 2, 1)
+                        hrp.Transparency = 1
+                    end
+                end
+            end
+        end
+    end
+end)
+
+
+-- ========================================================
+-- ПУНКТ 7: СБОРКА ИНТЕРФЕЙСА RAYFIELD
 -- ========================================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -398,7 +475,7 @@ local Window = Rayfield:CreateWindow({
 
 local MainTab = Window:CreateTab("Главная / Main", 4483362458)
 
--- Переключатель языка (RU / EN)
+-- Выбор языка
 MainTab:CreateDropdown({
    Name = "Language / Язык",
    Options = {"RU", "EN"},
@@ -451,7 +528,26 @@ MainTab:CreateToggle({
    end,
 })
 
--- [4] Автофарм и Настройка скорости
+-- [4] Хитбокс Мардера
+MainTab:CreateToggle({
+   Name = "Big Murderer Hitbox / Увеличить хитбокс Мардера",
+   CurrentValue = _G.HitboxEnabled,
+   Callback = function(Value)
+       _G.HitboxEnabled = Value
+   end,
+})
+
+MainTab:CreateSlider({
+   Name = "Размер хитбокса / Hitbox Size",
+   Range = {5, 30},
+   Increment = 1,
+   CurrentValue = _G.HitboxSize,
+   Callback = function(Value)
+       _G.HitboxSize = Value
+   end,
+})
+
+-- [5] Автофарм и Скорость
 MainTab:CreateToggle({
    Name = "Avto-farm / авто-фарм",
    CurrentValue = _G.AutoFarm,
@@ -470,7 +566,7 @@ MainTab:CreateSlider({
    end,
 })
 
--- [5] Невидимость
+-- [6] Невидимость и Авто-перезаход
 MainTab:CreateToggle({
    Name = "Invisibility / невидимость",
    CurrentValue = _G.Invisibility,
@@ -478,5 +574,14 @@ MainTab:CreateToggle({
        setInvisibility(Value)
    end,
 })
+
+MainTab:CreateToggle({
+   Name = "Auto-Rejoin / авто перезаход",
+   CurrentValue = _G.AutoRejoin,
+   Callback = function(Value)
+       _G.AutoRejoin = Value
+   end,
+})
+
 
 
