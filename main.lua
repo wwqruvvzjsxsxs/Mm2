@@ -1,15 +1,12 @@
 -- ========================================================
--- СИСТЕМА ЛОКАЛИЗАЦИИ И ПУНКТ 1: ПОДСВЕТКА ИГРОКОВ (ESP)
+-- ПУНКТ 1: ПОДСВЕТКА ИГРОКОВ (ESP)
 -- ========================================================
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
--- Настройки языка ("RU" или "EN", по умолчанию "RU")
 _G.Language = "RU"
 
--- Словари перевода интерфейса
 local Translations = {
     RU = {
         ESPButton = "Подсветка игроков",
@@ -23,143 +20,141 @@ local Translations = {
     }
 }
 
--- Вспомогательная функция получения текста на текущем языке
-local function getText(key)
-    return Translations[_G.Language] and Translations[_G.Language][key] or Translations["RU"][key]
-end
-
--- Настройки функции ESP
 _G.RolesESP = true
-_G.InnocentColor = Color3.fromRGB(0, 255, 0) -- Зеленый по умолчанию для мирных
-_G.ESPTransparency = 0.5
+_G.InnocentColor = Color3.fromRGB(0, 255, 0)
+_G.ESPTransparency = 0.4
 
--- СТРОГИЕ фиксированные цвета
-local MurdererColor = Color3.fromRGB(255, 0, 0) -- СТРОГО красный
-local SheriffColor = Color3.fromRGB(0, 0, 255)  -- СТРОГО синий
+local MurdererColor = Color3.fromRGB(255, 0, 0)
+local SheriffColor = Color3.fromRGB(0, 0, 255)
 
 local activeHighlights = {}
 
--- Функция определения роли игрока в MM2
-local function getMM2Role(player)
-    local character = player.Character
-    local backpack = player:FindFirstChild("Backpack")
+-- Очистка подсветки игрока
+local function removeHighlight(player)
+    if activeHighlights[player] then
+        if activeHighlights[player].Parent then
+            activeHighlights[player]:Destroy()
+        end
+        activeHighlights[player] = nil
+    end
+end
 
-    if (character and character:FindFirstChild("Knife")) or (backpack and backpack:FindFirstChild("Knife")) then
+-- Функция определения роли
+local function getMM2Role(player)
+    local char = player.Character
+    if not char then return "Innocent" end
+    
+    if char:FindFirstChild("Knife") or (player:FindFirstChild("Backpack") and player.Backpack:FindFirstChild("Knife")) then
         return "Murderer"
-    elseif (character and character:FindFirstChild("Gun")) or (backpack and backpack:FindFirstChild("Gun")) then
+    elseif char:FindFirstChild("Gun") or (player:FindFirstChild("Backpack") and player.Backpack:FindFirstChild("Gun")) then
         return "Sheriff"
     end
+    
     return "Innocent"
 end
 
--- Обновление подсветки конкретного игрока
+-- Обновление конкретного игрока
 local function updatePlayerESP(player)
     if player == LocalPlayer then return end
     
-    local character = player.Character
-    if not character then return end
-    
-    local humanoid = character:FindFirstChild("Humanoid")
-    if not humanoid or humanoid.Health <= 0 then
-        if activeHighlights[player.Name] then
-            activeHighlights[player.Name]:Destroy()
-            activeHighlights[player.Name] = nil
-        end
+    local char = player.Character
+    if not char then
+        removeHighlight(player)
+        return
+    end
+
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then
+        removeHighlight(player)
         return
     end
 
     local role = getMM2Role(player)
-    local fillColor = _G.InnocentColor
+    local targetColor = _G.InnocentColor
 
     if role == "Murderer" then
-        fillColor = MurdererColor
+        targetColor = MurdererColor
     elseif role == "Sheriff" then
-        fillColor = SheriffColor
+        targetColor = SheriffColor
     end
 
-    if not activeHighlights[player.Name] or activeHighlights[player.Name].Parent ~= character then
-        if activeHighlights[player.Name] then 
-            activeHighlights[player.Name]:Destroy() 
-        end
+    -- Создаем или обновляем Highlight
+    local hl = activeHighlights[player]
+    if not hl or hl.Parent ~= char then
+        removeHighlight(player)
+
+        hl = Instance.new("Highlight")
+        hl.Name = "MM2_ESP_Highlight"
+        hl.FillColor = targetColor
+        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+        hl.FillTransparency = _G.ESPTransparency
+        hl.OutlineTransparency = 0
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Parent = char
         
-        local highlight = Instance.new("Highlight")
-        highlight.Name = "ESP_MM2_Player"
-        highlight.FillColor = fillColor
-        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-        highlight.FillTransparency = _G.ESPTransparency
-        highlight.OutlineTransparency = 0
-        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        highlight.Parent = character
-        
-        activeHighlights[player.Name] = highlight
+        activeHighlights[player] = hl
     else
-        activeHighlights[player.Name].FillColor = fillColor
-        activeHighlights[player.Name].FillTransparency = _G.ESPTransparency
+        hl.FillColor = targetColor
+        hl.FillTransparency = _G.ESPTransparency
     end
 end
 
--- Постоянный цикл проверки ролей
-RunService.RenderStepped:Connect(function()
-    if _G.RolesESP then
-        for _, player in ipairs(Players:GetPlayers()) do
-            updatePlayerESP(player)
+-- Основной легкий цикл
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        if _G.RolesESP then
+            for _, player in ipairs(Players:GetPlayers()) do
+                updatePlayerESP(player)
+            end
+        else
+            for player, _ in pairs(activeHighlights) do
+                removeHighlight(player)
+            end
         end
-    else
-        for name, hl in pairs(activeHighlights) do
-            hl:Destroy()
-        end
-        activeHighlights = {}
     end
 end)
 
--- Очистка при выходе игрока
-Players.PlayerRemoving:Connect(function(player)
-    if activeHighlights[player.Name] then
-        activeHighlights[player.Name]:Destroy()
-        activeHighlights[player.Name] = nil
-    end
-end)
+Players.PlayerRemoving:Connect(removeHighlight)
 -- ========================================================
--- ПУНКТ 2: ПОДСВЕТКА ОРУЖИЯ (ESP WEAPON / ПОДСВЕТКА ОРУЖИЯ)
+-- ПУНКТ 2: ПОДСВЕТКА ОРУЖИЯ (ESP WEAPON)
 -- ========================================================
 
 local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
 
--- Расширение словаря переводов для второго пункта
 Translations.RU.GunESPButton = "подсветка оружия"
 Translations.EN.GunESPButton = "ESP WEAPON"
 
--- Настройки функции подсветки оружия
 _G.GunESP = true
 
-local SheriffColor = Color3.fromRGB(0, 0, 255) -- СТРОГО синий цвет
+local SheriffColor = Color3.fromRGB(0, 0, 255)
 local activeGunHighlight = nil
 
--- Функция отслеживания и подсвечивания выпавшего или находящегося на карте пистолета
+local function clearGunESP()
+    if activeGunHighlight then
+        activeGunHighlight:Destroy()
+        activeGunHighlight = nil
+    end
+end
+
 local function updateGunESP()
     if not _G.GunESP then
-        if activeGunHighlight then
-            activeGunHighlight:Destroy()
-            activeGunHighlight = nil
-        end
+        clearGunESP()
         return
     end
 
-    -- Поиск объекта выпавшего пистолета в Workspace карты MM2
-    local gunDrop = Workspace:FindFirstChild("GunDrop", true)
+    -- В MM2 выпавший пистолет называется GunDrop
+    local gunDrop = Workspace:FindFirstChild("GunDrop")
 
-    if gunDrop and gunDrop:IsA("BasePart") then
+    if gunDrop and (gunDrop:IsA("BasePart") or gunDrop:IsA("Model")) then
         if not activeGunHighlight or activeGunHighlight.Parent ~= gunDrop then
-            if activeGunHighlight then 
-                activeGunHighlight:Destroy() 
-            end
+            clearGunESP()
 
             local highlight = Instance.new("Highlight")
             highlight.Name = "Gun_ESP_Highlight"
             highlight.FillColor = SheriffColor
             highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-            highlight.FillTransparency = 0 -- Яркая видимость формы оружия
+            highlight.FillTransparency = 0.1
             highlight.OutlineTransparency = 0
             highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
             highlight.Parent = gunDrop
@@ -167,29 +162,19 @@ local function updateGunESP()
             activeGunHighlight = highlight
         end
     else
-        -- Если пистолет кто-то поднял обратно в инвентарь или он отсутствует на карте
-        if activeGunHighlight then
-            activeGunHighlight:Destroy()
-            activeGunHighlight = nil
-        end
+        clearGunESP()
     end
 end
 
--- Постоянное отслеживание статуса пистолета каждый кадр
-RunService.RenderStepped:Connect(function()
-    updateGunESP()
+task.spawn(function()
+    while true do
+        task.wait(0.3)
+        updateGunESP()
+    end
 end)
 -- ========================================================
--- ПУНКТ 3: АВТО НАВОДКА (AUTO-GUIDANCE / АВТО НАВОДКА)
+-- ПУНКТ 3: АВТО НАВОДКА (AUTO-GUIDANCE)
 -- ========================================================
-
--- Обновление словаря переводов
-Translations.RU.AutoGuidanceButton = "авто наводка"
-Translations.EN.AutoGuidanceButton = "auto-guidance"
-
--- Настройки функции авто-наводки
-_G.AimbotEnabled = false
-_G.AimbotSmoothness = 0.1 -- Плавность (чем меньше, тем быстрее)
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -197,32 +182,43 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
--- Поиск цели в зависимости от роли
-local function getTarget()
+Translations.RU.AutoGuidanceButton = "авто наводка"
+Translations.EN.AutoGuidanceButton = "auto-guidance"
+
+_G.AimbotEnabled = false
+_G.AimbotSmoothness = 0.2 -- Плавность (чем больше, тем быстрее наводка)
+
+-- Поиск цели в зависимости от вашей роли
+local function getAimbotTarget()
     local myRole = getMM2Role(LocalPlayer)
     local bestTarget = nil
     local minDistance = math.huge
 
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
+    local myPos = myChar.HumanoidRootPart.Position
+
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            local targetRole = getMM2Role(player)
-            local humanoid = player.Character:FindFirstChild("Humanoid")
+        if player ~= LocalPlayer and player.Character then
+            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
             
-            if humanoid and humanoid.Health > 0 then
+            if hrp and hum and hum.Health > 0 then
+                local targetRole = getMM2Role(player)
                 local shouldTarget = false
                 
-                -- Логика: Шериф ищет Мардера, Мардер ищет ближайшую цель
-                if myRole == "Sheriff" then
-                    if targetRole == "Murderer" then shouldTarget = true end
-                elseif myRole == "Murderer" then
+                -- Шериф целится только в Мардера, Мардер — во всех мирных/шерифов
+                if myRole == "Sheriff" and targetRole == "Murderer" then
+                    shouldTarget = true
+                elseif myRole == "Murderer" and targetRole ~= "Murderer" then
                     shouldTarget = true
                 end
 
                 if shouldTarget then
-                    local dist = (LocalPlayer.Character.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
+                    local dist = (myPos - hrp.Position).Magnitude
                     if dist < minDistance then
                         minDistance = dist
-                        bestTarget = player.Character.HumanoidRootPart
+                        bestTarget = hrp
                     end
                 end
             end
@@ -231,51 +227,67 @@ local function getTarget()
     return bestTarget
 end
 
--- Основной цикл наводки
+-- Плавный поворот камеры при включенном Аимботе
 RunService.RenderStepped:Connect(function()
-    if _G.AimbotEnabled then
-        local target = getTarget()
+    if _G.AimbotEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local target = getAimbotTarget()
         if target then
-            -- Плавное наведение камеры на цель
             local targetCFrame = CFrame.new(Camera.CFrame.Position, target.Position)
             Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, _G.AimbotSmoothness)
         end
     end
 end)
 -- ========================================================
--- ПУНКТ 4: АВТОФАРМ (AVTO-FARM / АВТО-ФАРМ)
+-- ПУНКТ 4: АВТОФАРМ И СКОРОСТЬ (AUTO-FARM & SPEED)
 -- ========================================================
 
--- Обновление словаря переводов
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
 Translations.RU.AutoFarmButton = "авто-фарм"
 Translations.EN.AutoFarmButton = "Avto-farm"
 Translations.RU.SpeedLabel = "Скорость персонажа"
 Translations.EN.SpeedLabel = "Player Speed"
 
-local TweenService = game:GetService("TweenService")
-local Workspace = game:GetService("Workspace")
-
--- Настройки автофарма
 _G.AutoFarm = false
-_G.FarmSpeed = 20 -- Начальное значение скорости
+_G.FarmSpeed = 20 -- Скорость по умолчанию (в Roblox стандартная = 16)
 
--- Функция поиска ближайшей монетки
+-- 1. Постоянное обновление скорости бега персонажа
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        local char = LocalPlayer.Character
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                -- Принудительно задаем скорость персонажу
+                if _G.FarmSpeed and _G.FarmSpeed >= 16 then
+                    hum.WalkSpeed = _G.FarmSpeed
+                end
+            end
+        end
+    end
+end)
+
+-- 2. Функция поиска ближайшей монеты на карте
 local function getNearestCoin()
-    local character = LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
-    local root = character.HumanoidRootPart
-    
-    local nearestCoin = nil
-    local shortestDistance = math.huge
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    local root = char.HumanoidRootPart
 
-    -- Поиск монеток в стандартных контейнерах MM2
-    for _, container in ipairs(Workspace:GetChildren()) do
-        if container.Name == "CoinContainer" then
+    local nearestCoin = nil
+    local minDistance = math.huge
+
+    -- Поиск контейнера монет
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        if obj.Name == "CoinContainer" or obj:FindFirstChild("CoinContainer") then
+            local container = obj.Name == "CoinContainer" and obj or obj:FindFirstChild("CoinContainer")
             for _, coin in ipairs(container:GetChildren()) do
-                if coin:IsA("BasePart") then
+                if coin:IsA("BasePart") and coin.Transparency < 1 then
                     local dist = (root.Position - coin.Position).Magnitude
-                    if dist < shortestDistance then
-                        shortestDistance = dist
+                    if dist < minDistance then
+                        minDistance = dist
                         nearestCoin = coin
                     end
                 end
@@ -285,84 +297,80 @@ local function getNearestCoin()
     return nearestCoin
 end
 
--- Основной поток автофарма
+-- 3. Безопасный автофарм через нативный MoveTo (без вылетов и багов камеры)
 task.spawn(function()
     while true do
-        task.wait(0.1) -- Задержка цикла
+        task.wait(0.1)
         if _G.AutoFarm then
-            local coin = getNearestCoin()
-            if coin and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                local root = LocalPlayer.Character.HumanoidRootPart
-                local distance = (root.Position - coin.Position).Magnitude
+            local char = LocalPlayer.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                local root = char:FindFirstChild("HumanoidRootPart")
                 
-                -- Вычисление времени на основе настроенной скорости
-                local moveTime = distance / math.max(_G.FarmSpeed, 1)
-                
-                -- Плавное перемещение (Tween) к позиции монетки
-                local tweenInfo = TweenInfo.new(moveTime, Enum.EasingStyle.Linear)
-                local tween = TweenService:Create(root, tweenInfo, {CFrame = coin.CFrame})
-                
-                tween:Play()
-                tween.Completed:Wait() -- Ожидание завершения движения
+                if hum and hum.Health > 0 and root then
+                    local coin = getNearestCoin()
+                    if coin then
+                        -- Персонаж нормально бежит к монете с установленной скоростью WalkSpeed
+                        hum:MoveTo(coin.Position)
+                        
+                        -- Ждем прибытия к монете или подбора
+                        local startTime = tick()
+                        repeat
+                            task.wait(0.1)
+                        until not _G.AutoFarm or not coin or not coin.Parent or coin.Transparency == 1 or (root.Position - coin.Position).Magnitude < 3 or (tick() - startTime) > 3
+                    end
+                end
             end
         end
     end
 end)
 -- ========================================================
--- ПУНКТ 5: НЕВИДИМОСТЬ (INVISIBILITY / НЕВИДИМОСТЬ)
+-- ПУНКТ 5: НЕВИДИМОСТЬ (INVISIBILITY)
 -- ========================================================
 
--- Обновление словаря переводов
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
 Translations.RU.InvisButton = "невидимость"
 Translations.EN.InvisButton = "Invisibility"
 
--- Настройки невидимости
 _G.Invisibility = false
+local PinkColor = Color3.fromRGB(255, 105, 180)
 
-local PinkColor = Color3.fromRGB(255, 105, 180) -- Ярко-розовый цвет для локального тела
-
--- Функция включения/выключения локальной невидимости
+-- Безопасная функция управления невидимостью без взлета модели
 local function setInvisibility(state)
     _G.Invisibility = state
-    local character = LocalPlayer.Character
-    if not character then return end
+    local char = LocalPlayer.Character
+    if not char then return end
 
-    local root = character:FindFirstChild("HumanoidRootPart")
+    local highlight = char:FindFirstChild("Self_Invis_Highlight")
 
     if state then
-        -- 1. Подсветка ярко-розовым цветом для самого себя
-        local highlight = character:FindFirstChild("Self_Invis_Highlight") or Instance.new("Highlight")
-        highlight.Name = "Self_Invis_Highlight"
-        highlight.FillColor = PinkColor
-        highlight.OutlineColor = Color3.fromRGB(255, 192, 203)
-        highlight.FillTransparency = 0.5
-        highlight.OutlineTransparency = 0
-        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        highlight.Parent = character
+        -- 1. Розовый силуэт для владельца скрипта, чтобы не потерять персонажа
+        if not highlight then
+            highlight = Instance.new("Highlight")
+            highlight.Name = "Self_Invis_Highlight"
+            highlight.FillColor = PinkColor
+            highlight.OutlineColor = Color3.fromRGB(255, 192, 203)
+            highlight.FillTransparency = 0.5
+            highlight.OutlineTransparency = 0
+            highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            highlight.Parent = char
+        end
 
-        -- 2. Локальное скрытие деталей персонажа (подсветка остается видимой)
-        for _, part in ipairs(character:GetDescendants()) do
-            if part:IsA("BasePart") or part:IsA("Decal") then
-                if part.Name ~= "HumanoidRootPart" then
-                    part.LocalTransparencyModifier = 0.7
-                end
+        -- 2. Делаем части тела прозрачными
+        for _, part in ipairs(char:GetDescendants()) do
+            if (part:IsA("BasePart") or part:IsA("Decal")) and part.Name ~= "HumanoidRootPart" then
+                part.LocalTransparencyModifier = 0.8
             end
         end
-
-        -- 3. Отвязка RootPart (заморозка отображения хитбокса на сервере)
-        if root then
-            local clone = root:Clone()
-            clone.Parent = character
-            root.Transparency = 1
-        end
     else
-        -- Сброс невидимости и удаление розовoй подсветки
-        local highlight = character:FindFirstChild("Self_Invis_Highlight")
+        -- Сброс невидимости
         if highlight then
             highlight:Destroy()
         end
 
-        for _, part in ipairs(character:GetDescendants()) do
+        for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") or part:IsA("Decal") then
                 part.LocalTransparencyModifier = 0
             end
@@ -370,22 +378,24 @@ local function setInvisibility(state)
     end
 end
 
+-- Автоматический сброс при перерождении (смерти)
+LocalPlayer.CharacterAdded:Connect(function()
+    _G.Invisibility = false
+end)
 -- ========================================================
--- ПУНКТ 6: СБОРКА ИНТЕРФЕЙСА RAYFIELD С ПЕРЕКЛЮЧЕНИЕМ ЯЗЫКА
+-- ПУНКТ 6: СБОРКА ИНТЕРФЕЙСА RAYFIELD
 -- ========================================================
 
--- Подключение графической библиотеки Rayfield
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
--- Создание главного окна
 local Window = Rayfield:CreateWindow({
    Name = "MM2 Ultimate Hub",
    LoadingTitle = "MM2 Script",
    LoadingSubtitle = "by Yuri",
-   ConfigurationSaving = { Enabled = false }
+   ConfigurationSaving = { Enabled = false },
+   KeySystem = false
 })
 
--- Создание вкладок
 local MainTab = Window:CreateTab("Главная / Main", 4483362458)
 
 -- Переключатель языка (RU / EN)
@@ -397,7 +407,6 @@ MainTab:CreateDropdown({
    Callback = function(Option)
        _G.Language = Option[1]
        
-       -- Уведомление о смене языка
        Rayfield:Notify({
           Title = _G.Language == "RU" and "Язык изменен" or "Language Changed",
           Content = _G.Language == "RU" and "Текущий язык: Русский" or "Current language: English",
@@ -407,46 +416,45 @@ MainTab:CreateDropdown({
    end,
 })
 
--- [1] Переключатель Подсветки Игроков
+-- [1] ESP Игроков
 MainTab:CreateToggle({
    Name = "ESP / подсветка",
-   CurrentValue = true,
+   CurrentValue = _G.RolesESP,
    Callback = function(Value)
        _G.RolesESP = Value
    end,
 })
 
--- Выбор цвета для Мирных игроков
 MainTab:CreateColorPicker({
     Name = "Innocent ESP Color",
-    Color = Color3.fromRGB(0, 255, 0),
+    Color = _G.InnocentColor,
     Callback = function(Value)
         _G.InnocentColor = Value
     end
 })
 
--- [2] Переключатель Подсветки Оружия
+-- [2] ESP Оружия
 MainTab:CreateToggle({
    Name = "ESP WEAPON / подсветка оружия",
-   CurrentValue = true,
+   CurrentValue = _G.GunESP,
    Callback = function(Value)
        _G.GunESP = Value
    end,
 })
 
--- [3] Переключатель Авто-наводки
+-- [3] Авто-наводка
 MainTab:CreateToggle({
    Name = "auto-guidance / авто наводка",
-   CurrentValue = false,
+   CurrentValue = _G.AimbotEnabled,
    Callback = function(Value)
        _G.AimbotEnabled = Value
    end,
 })
 
--- [4] Переключатель и Слайдер Автофарма
+-- [4] Автофарм и Настройка скорости
 MainTab:CreateToggle({
    Name = "Avto-farm / авто-фарм",
-   CurrentValue = false,
+   CurrentValue = _G.AutoFarm,
    Callback = function(Value)
        _G.AutoFarm = Value
    end,
@@ -454,19 +462,21 @@ MainTab:CreateToggle({
 
 MainTab:CreateSlider({
    Name = "значение скорости персонажа / Player Speed",
-   Range = {10, 50},
+   Range = {16, 60},
    Increment = 1,
-   CurrentValue = 20,
+   CurrentValue = _G.FarmSpeed,
    Callback = function(Value)
        _G.FarmSpeed = Value
    end,
 })
 
--- [5] Переключатель Невидимости
+-- [5] Невидимость
 MainTab:CreateToggle({
    Name = "Invisibility / невидимость",
-   CurrentValue = false,
+   CurrentValue = _G.Invisibility,
    Callback = function(Value)
        setInvisibility(Value)
    end,
 })
+
+
