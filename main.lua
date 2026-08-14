@@ -719,6 +719,44 @@ local function placePoster()
 end
 
 -- ========================================================
+-- МОДУЛЬ: AUTO-FARM UNDER MAP + INSTANT COIN MAGNET
+-- ========================================================
+
+_G.FarmUnderMap = false
+local safeCFrame = nil
+
+task.spawn(function()
+    while task.wait(0.1) do
+        if _G.FarmUnderMap then
+            local player = game.Players.LocalPlayer
+            local character = player.Character
+            
+            if character and character:FindFirstChild("HumanoidRootPart") then
+                local hrp = character.HumanoidRootPart
+                
+                -- Запоминаем или создаем точку под картой (-50 студов вниз)
+                if not safeCFrame then
+                    safeCFrame = hrp.CFrame * CFrame.new(0, -50, 0)
+                end
+                
+                -- Удерживаем персонажа под картой и слегка вращаем для сбора
+                hrp.CFrame = safeCFrame * CFrame.Angles(0, math.rad((tick() * 300) % 360), 0)
+                hrp.Velocity = Vector3.new(0, 0, 0) -- Отключаем падение
+                
+                -- Телепортируем ВСЕ монеты с карты прямо в персонажа
+                for _, obj in ipairs(workspace:GetDescendants()) do
+                    if obj.Name == "Coin" and obj:IsA("BasePart") then
+                        obj.CFrame = hrp.CFrame
+                    end
+                end
+            end
+        else
+            safeCFrame = nil -- Сбрасываем точку при отключении
+        end
+    end
+end)
+
+-- ========================================================
 -- ПУНКТ 9: СБОРКА ИНТЕРФЕЙСА RAYFIELD
 -- ========================================================
 
@@ -848,6 +886,15 @@ MainTab:CreateSlider({
        _G.FarmSpeed = Value
    end,
 })
+
+MainTab:CreateToggle({
+   Name = "АФК сбор монет / AFK Coin Collection",
+   CurrentValue = _G.FarmUnderMap,
+   Callback = function(Value)
+       _G.FarmUnderMap = Value
+   end,
+})
+
 
 -- ==========================================
 -- ВКЛАДКА 2: ГРАФФИТИ / POSTERS
