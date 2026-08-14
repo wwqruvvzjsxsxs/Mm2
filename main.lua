@@ -677,6 +677,48 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ========================================================
+-- МОДУЛЬ: CUSTOM POSTER SYSTEM (С НАСТРОЙКОЙ РАЗМЕРА)
+-- ========================================================
+
+_G.PosterURL = ""
+_G.PosterWidth = 4  -- Дефолтная ширина
+_G.PosterHeight = 4 -- Дефолтная высота
+_G.Posters = {} 
+
+local function placePoster()
+    local player = game.Players.LocalPlayer
+    local mouse = player:GetMouse()
+    
+    local rayOrigin = workspace.CurrentCamera.CFrame.Position
+    local rayDirection = workspace.CurrentCamera.CFrame.LookVector * 50 -- Увеличил дальность
+    
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterDescendantsInstances = {player.Character}
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    
+    local raycastResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+    
+    if raycastResult and _G.PosterURL ~= "" then
+        local posterPart = Instance.new("Part")
+        -- Используем глобальные переменные для размера
+        posterPart.Size = Vector3.new(_G.PosterWidth, _G.PosterHeight, 0.1) 
+        posterPart.Anchored = true
+        posterPart.CanCollide = false
+        posterPart.Transparency = 1 
+        -- Устанавливаем плакат перпендикулярно поверхности стены
+        posterPart.CFrame = CFrame.new(raycastResult.Position + (raycastResult.Normal * 0.05), raycastResult.Position + raycastResult.Normal)
+        posterPart.Parent = workspace
+        
+        local decal = Instance.new("Decal")
+        decal.Texture = _G.PosterURL
+        decal.Face = Enum.NormalId.Front
+        decal.Parent = posterPart
+        
+        table.insert(_G.Posters, posterPart)
+    end
+end
+
+-- ========================================================
 -- ПУНКТ 9: СБОРКА ИНТЕРФЕЙСА RAYFIELD
 -- ========================================================
 
@@ -690,25 +732,14 @@ local Window = Rayfield:CreateWindow({
    KeySystem = false
 })
 
+-- Создание вкладок
 local MainTab = Window:CreateTab("Главная / Main", 4483362458)
+local PosterTab = Window:CreateTab("Граффити / Posters", 4483362458)
+local MiscTab = Window:CreateTab("Разное / Misc", 4483362458)
 
--- Выбор языка
-MainTab:CreateDropdown({
-   Name = "Language / Язык",
-   Options = {"RU", "EN"},
-   CurrentOption = {"RU"},
-   MultipleOptions = false,
-   Callback = function(Option)
-       _G.Language = Option[1]
-       
-       Rayfield:Notify({
-          Title = _G.Language == "RU" and "Язык изменен" or "Language Changed",
-          Content = _G.Language == "RU" and "Текущий язык: Русский" or "Current language: English",
-          Duration = 3,
-          Image = 4483362458,
-       })
-   end,
-})
+-- ==========================================
+-- ВКЛАДКА 1: ГЛАВНАЯ / MAIN
+-- ==========================================
 
 -- [1] ESP Игроков
 MainTab:CreateToggle({
@@ -754,7 +785,7 @@ MainTab:CreateSlider({
    end,
 })
 
--- [3] Защита (Уменьшение хитбоксов врагов)
+-- [3] Защита
 MainTab:CreateToggle({
    Name = "Мини-хитбокс ножа Мардера / Anti-Knife Hitbox",
    CurrentValue = _G.AntiKnifeHitbox,
@@ -773,7 +804,7 @@ MainTab:CreateToggle({
 
 -- [4] Авто-наводка
 MainTab:CreateToggle({
-   Name = "auto-guidance / Авто наводка",
+   Name = "Auto-guidance / Авто-наводка",
    CurrentValue = _G.AimbotEnabled,
    Callback = function(Value)
        _G.AimbotEnabled = Value
@@ -801,7 +832,7 @@ MainTab:CreateSlider({
 
 -- [6] Автофарм и Скорость
 MainTab:CreateToggle({
-   Name = "Avto-farm / Авто-фарм",
+   Name = "Auto-farm / Авто-фарм",
    CurrentValue = _G.AutoFarm,
    Callback = function(Value)
        _G.AutoFarm = Value
@@ -818,16 +849,125 @@ MainTab:CreateSlider({
    end,
 })
 
--- [7] Невидимость и Авто-перезаход
-MainTab:CreateToggle({
-   Name = "Invisibility / Невидимость",
-   CurrentValue = _G.Invisibility,
-   Callback = function(Value)
-       setInvisibility(Value)
+-- ==========================================
+-- ВКЛАДКА 2: ГРАФФИТИ / POSTERS
+-- ==========================================
+
+PosterTab:CreateInput({
+   Name = "Ссылка на картинку / Poster URL",
+   PlaceholderText = "rbxassetid://... или ссылка...",
+   RemoveTextAfterFocusLost = false,
+   Callback = function(Text)
+       _G.PosterURL = Text
    end,
 })
 
-MainTab:CreateToggle({
+PosterTab:CreateSlider({
+   Name = "Ширина плаката / Poster Width",
+   Range = {1, 20},
+   Increment = 0.5,
+   Suffix = "studs",
+   CurrentValue = _G.PosterWidth or 4,
+   Callback = function(Value)
+       _G.PosterWidth = Value
+   end,
+})
+
+PosterTab:CreateSlider({
+   Name = "Высота плаката / Poster Height",
+   Range = {1, 20},
+   Increment = 0.5,
+   Suffix = "studs",
+   CurrentValue = _G.PosterHeight or 4,
+   Callback = function(Value)
+       _G.PosterHeight = Value
+   end,
+})
+
+PosterTab:CreateButton({
+   Name = "Повесить плакат / Place Poster",
+   Callback = function()
+       if placePoster then
+           placePoster()
+       end
+   end,
+})
+
+PosterTab:CreateButton({
+   Name = "Удалить все плакаты / Clear All Posters",
+   Callback = function()
+       if _G.Posters then
+           for _, poster in pairs(_G.Posters) do
+               poster:Destroy()
+           end
+           _G.Posters = {}
+       end
+   end,
+})
+
+-- ==========================================
+-- ВКЛАДКА 3: РАЗНОЕ / MISC
+-- ==========================================
+
+-- Выбор языка
+MiscTab:CreateDropdown({
+   Name = "Language / Язык",
+   Options = {"RU", "EN"},
+   CurrentOption = {"RU"},
+   MultipleOptions = false,
+   Callback = function(Option)
+       _G.Language = Option[1]
+       
+       Rayfield:Notify({
+          Title = _G.Language == "RU" and "Язык изменен" or "Language Changed",
+          Content = _G.Language == "RU" and "Текущий язык: Русский" or "Current language: English",
+          Duration = 3,
+          Image = 4483362458,
+       })
+   end,
+})
+
+-- Кастомная текстура монет
+MiscTab:CreateInput({
+   Name = "Custom Coin PNG / Текстура монет",
+   PlaceholderText = "rbxassetid://... или ссылка...",
+   RemoveTextAfterFocusLost = false,
+   Callback = function(Text)
+       _G.CustomCoinImage = Text
+       for _, coin in ipairs(workspace:GetDescendants()) do
+           if coin.Name == "Coin" and applyCoinTexture then
+               applyCoinTexture(coin)
+           end
+       end
+   end,
+})
+
+-- Фейковый ник
+MiscTab:CreateInput({
+   Name = "Fake Name / Фейковый ник",
+   PlaceholderText = "Введите имя...",
+   RemoveTextAfterFocusLost = false,
+   Callback = function(Text)
+       _G.FakeName = Text
+       local LocalPlayer = game.Players.LocalPlayer
+       if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+           LocalPlayer.Character.Humanoid.DisplayName = Text
+       end
+   end,
+})
+
+-- Невидимость и серверные функции
+MiscTab:CreateToggle({
+   Name = "Invisibility / Невидимость",
+   CurrentValue = _G.Invisibility,
+   Callback = function(Value)
+       if setInvisibility then
+           setInvisibility(Value)
+       end
+   end,
+})
+
+MiscTab:CreateToggle({
    Name = "Auto-Rejoin / Авто перезаход",
    CurrentValue = _G.AutoRejoin,
    Callback = function(Value)
@@ -835,19 +975,18 @@ MainTab:CreateToggle({
    end,
 })
 
-MainTab:CreateToggle({
+MiscTab:CreateToggle({
    Name = "FPS Boost / Оптимизация ФПС",
    CurrentValue = _G.FPSBoostEnabled,
    Callback = function(Value)
        _G.FPSBoostEnabled = Value
-       if Value then
+       if Value and applyFPSBoost then
            applyFPSBoost()
        end
    end,
 })
 
--- Самый конец Блока 9 (в самом низу меню)
-MainTab:CreateToggle({
+MiscTab:CreateToggle({
    Name = "Anti-AFK / Защита от AFK",
    CurrentValue = _G.AntiAFK,
    Callback = function(Value)
@@ -855,17 +994,5 @@ MainTab:CreateToggle({
    end,
 })
 
--- Поле для ввода фейкового ника в 9 блоке
-MainTab:CreateInput({
-   Name = "Fake Name / Фейковый ник",
-   PlaceholderText = "Введите имя...",
-   RemoveTextAfterFocusLost = false,
-   Callback = function(Text)
-       _G.FakeName = Text
-       -- Сразу применяем к текущему персонажу
-       if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-           LocalPlayer.Character.Humanoid.DisplayName = Text
-       end
-   end,
-})
-
+-- Завершение инициализации
+Rayfield:LoadConfiguration()
