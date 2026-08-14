@@ -3,6 +3,10 @@
 -- ========================================================
 
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local TeleportService = game:GetService("TeleportService")
+local GuiService = game:GetService("GuiService")
 local LocalPlayer = Players.LocalPlayer
 
 _G.Language = "RU"
@@ -119,15 +123,18 @@ Players.PlayerRemoving:Connect(removeHighlight)
 
 
 -- ========================================================
--- ПУНКТ 2: ПОДСВЕТКА ОРУЖИЯ (ESP WEAPON)
+-- ПУНКТ 2: ПОДСВЕТКА ОРУЖИЯ (ESP WEAPON) И УПРАВЛЕНИЕ ХИТБОКСАМИ
 -- ========================================================
-
-local Workspace = game:GetService("Workspace")
 
 Translations.RU.GunESPButton = "подсветка оружия"
 Translations.EN.GunESPButton = "ESP WEAPON"
 
 _G.GunESP = true
+_G.GunHitboxEnabled = false
+_G.GunHitboxSize = 10
+
+_G.AntiKnifeHitbox = false  -- Уменьшение хитбокса ножа Мардера
+_G.AntiBulletHitbox = false -- Уменьшение хитбокса пуль/оружия Шерифа
 
 local activeGunHighlight = nil
 
@@ -138,6 +145,7 @@ local function clearGunESP()
     end
 end
 
+-- Обновление подсветки выпавшего пистолета
 local function updateGunESP()
     if not _G.GunESP then
         clearGunESP()
@@ -174,13 +182,62 @@ task.spawn(function()
     end
 end)
 
+-- 1. Увеличение зоны подбора упавшего пистолета (GunDrop)
+task.spawn(function()
+    while true do
+        task.wait(0.4)
+        local gunDrop = Workspace:FindFirstChild("GunDrop")
+        if gunDrop then
+            local mainPart = gunDrop:IsA("BasePart") and gunDrop or gunDrop:FindFirstChildOfClass("BasePart")
+            if mainPart then
+                if _G.GunHitboxEnabled then
+                    mainPart.Size = Vector3.new(_G.GunHitboxSize, _G.GunHitboxSize, _G.GunHitboxSize)
+                    mainPart.CanCollide = false
+                    mainPart.Transparency = 0.6
+                else
+                    mainPart.Size = Vector3.new(2, 2, 2)
+                    mainPart.Transparency = 0
+                end
+            end
+        end
+    end
+end)
+
+-- 2. Уменьшение хитбоксов Ножа (Мардера) и Оружия/Пули (Шерифа)
+task.spawn(function()
+    while true do
+        task.wait(0.3)
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local char = player.Character
+                local role = getMM2Role(player)
+                
+                -- Если включено уменьшение хитбокса ножа у Мардера
+                if _G.AntiKnifeHitbox and role == "Murderer" then
+                    local knife = char:FindFirstChild("Knife") or (player:FindFirstChild("Backpack") and player.Backpack:FindFirstChild("Knife"))
+                    if knife and knife:FindFirstChild("Handle") then
+                        knife.Handle.Size = Vector3.new(0.01, 0.01, 0.01)
+                    end
+                end
+
+                -- Если включено уменьшение хитбокса выстрела у Шерифа
+                if _G.AntiBulletHitbox and role == "Sheriff" then
+                    local gun = char:FindFirstChild("Gun") or (player:FindFirstChild("Backpack") and player.Backpack:FindFirstChild("Gun"))
+                    if gun and gun:FindFirstChild("Handle") then
+                        gun.Handle.Size = Vector3.new(0.01, 0.01, 0.01)
+                    end
+                end
+            end
+        end
+    end
+end)
 -- ========================================================
 -- ПУНКТ 3: АВТО НАВОДКА И ВЫСТРЕЛ (AUTO-GUIDANCE & SHOOT)
 -- ========================================================
 
-local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
@@ -258,7 +315,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 -- ========================================================
--- ПУНКТ 4: АВТОФАРМ ПОД КАРТОЙ И СКОРОСТЬ (UNDERGROUND FARM & NOCLIP)
+-- ПУНКТ 4: БЫСТРЫЙ ФАРМ ПОД КАРТОЙ С МАГНИТОМ МОНЕТ (UNDERGROUND COIN MAGNET)
 -- ========================================================
 
 local Workspace = game:GetService("Workspace")
@@ -273,8 +330,9 @@ Translations.EN.SpeedLabel = "Player Speed"
 
 _G.AutoFarm = false
 _G.FarmSpeed = 20
+_G.CoinHitboxSize = 5 -- Размер хитбокса монеты для моментального сбора
 
--- 1. Noclip (отключение столкновений с блоками при фарме под картой)
+-- 1. Noclip (Отключение столкновений)
 RunService.Stepped:Connect(function()
     if _G.AutoFarm and LocalPlayer.Character then
         for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
@@ -285,7 +343,7 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- 2. Принудительное назначение скорости бега
+-- 2. Установка скорости
 task.spawn(function()
     while true do
         task.wait(0.2)
@@ -299,7 +357,7 @@ task.spawn(function()
     end
 end)
 
--- 3. Поиск ближайшей монеты на карте
+-- 3. Поиск ближайшей монеты
 local function getNearestCoin()
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
@@ -325,10 +383,10 @@ local function getNearestCoin()
     return nearestCoin
 end
 
--- 4. Телепортация под карту прямо под монеты
+-- 4. Телепорт под картой + Магнит хитбокса монет
 task.spawn(function()
     while true do
-        task.wait(0.05)
+        task.wait(0.01) -- Максимально быстрый цикл сбора
         if _G.AutoFarm then
             local char = LocalPlayer.Character
             local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -337,38 +395,64 @@ task.spawn(function()
             if root and hum and hum.Health > 0 then
                 local coin = getNearestCoin()
                 if coin then
-                    root.CFrame = coin.CFrame * CFrame.new(0, -2.5, 0)
+                    -- Увеличиваем хитбокс монеты, чтобы зацепить её издалека
+                    coin.Size = Vector3.new(_G.CoinHitboxSize, _G.CoinHitboxSize, _G.CoinHitboxSize)
+                    coin.CanCollide = false
+
+                    -- Мгновенно перемещаемся под монету (на 3 блока ниже пола)
+                    root.CFrame = CFrame.new(coin.Position.X, coin.Position.Y - 3, coin.Position.Z)
                 end
             end
         end
     end
 end)
 -- ========================================================
--- ПУНКТ 5: НЕВИДИМОСТЬ И АВТО-ПЕРЕЗАХОД (INVISIBILITY & AUTO-REJOIN)
+-- ПУНКТ 5: НАСТОЯЩАЯ НЕВИДИМОСТЬ И АВТО-ПЕРЕЗАХОД (SERVER INVISIBILITY & AUTO-REJOIN)
+-- ========================================================
+
+-- ========================================================
+-- ПУНКТ 5: СЕРВЕРНАЯ НЕВИДИМОСТЬ, АВТО-ПЕРЕЗАХОД И ANTI-AFK
 -- ========================================================
 
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
 local GuiService = game:GetService("GuiService")
+local VirtualUser = game:GetService("VirtualUser")
 local LocalPlayer = Players.LocalPlayer
 
 Translations.RU.InvisButton = "невидимость"
 Translations.EN.InvisButton = "Invisibility"
+Translations.RU.AntiAfkButton = "Защита от AFK"
+Translations.EN.AntiAfkButton = "Anti-AFK"
 
 _G.Invisibility = false
 _G.AutoRejoin = true
+_G.AntiAFK = true
+
 local PinkColor = Color3.fromRGB(255, 105, 180)
 
--- Безопасная невидимость без багов модели
+-- 1. Anti-AFK (Защита от вылета за бездействие через 20 минут)
+LocalPlayer.Idled:Connect(function()
+    if _G.AntiAFK then
+        VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+        task.wait(1)
+        VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+    end
+end)
+
+-- 2. Настоящая серверная невидимость (смещение визуальной модели под карту)
 local function setInvisibility(state)
     _G.Invisibility = state
     local char = LocalPlayer.Character
     if not char then return end
 
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
     local highlight = char:FindFirstChild("Self_Invis_Highlight")
 
     if state then
-        -- Розовый силуэт для удобства владельца
+        -- Создаем розовый силуэт для собственного удобства
         if not highlight then
             highlight = Instance.new("Highlight")
             highlight.Name = "Self_Invis_Highlight"
@@ -380,12 +464,24 @@ local function setInvisibility(state)
             highlight.Parent = char
         end
 
-        -- Делаем части тела прозрачными
+        -- Локальная прозрачность для себя
         for _, part in ipairs(char:GetDescendants()) do
             if (part:IsA("BasePart") or part:IsA("Decal")) and part.Name ~= "HumanoidRootPart" then
-                part.LocalTransparencyModifier = 0.8
+                part.LocalTransparencyModifier = 0.7
             end
         end
+
+        -- Сдвигаем части тела под карту на 500 блоков для остальных
+        task.spawn(function()
+            while _G.Invisibility and char and char.Parent do
+                task.wait()
+                for _, part in ipairs(char:GetChildren()) do
+                    if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                        part.CFrame = hrp.CFrame * CFrame.new(0, -500, 0)
+                    end
+                end
+            end
+        end)
     else
         -- Сброс невидимости
         if highlight then
@@ -405,19 +501,17 @@ LocalPlayer.CharacterAdded:Connect(function()
     _G.Invisibility = false
 end)
 
--- Авто-перезаход на сервер при кике или вылете
+-- 3. Авто-перезаход на сервер при кике или вылете
 GuiService.ErrorMessageChanged:Connect(function()
     if _G.AutoRejoin then
         task.wait(1)
         TeleportService:Teleport(game.PlaceId, LocalPlayer)
     end
 end)
+
 -- ========================================================
 -- ПУНКТ 6: УВЕЛИЧЕНИЕ ХИТБОКСА МАРДЕРА (HITBOX EXPANDER)
 -- ========================================================
-
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
 
 _G.HitboxEnabled = false
 _G.HitboxSize = 10
@@ -443,7 +537,7 @@ task.spawn(function()
                 end
             end
         else
-            -- Сброс размеров хитбокса
+            -- Сброс размеров хитбокса до стандартных значений
             for _, player in ipairs(Players:GetPlayers()) do
                 local char = player.Character
                 if char then
@@ -457,10 +551,133 @@ task.spawn(function()
         end
     end
 end)
+-- ========================================================
+-- ПУНКТ 7: НОВЫЕ ФУНКЦИИ (ХИТБОКС ПИСТОЛЕТА И МИНИМИЗАЦИЯ УРОНА)
+-- ========================================================
 
+_G.GunHitboxEnabled = false
+_G.GunHitboxSize = 10
+
+_G.AntiKnifeHitbox = false  -- Уменьшение хитбокса ножа Мардера
+_G.AntiBulletHitbox = false -- Уменьшение хитбокса пуль/оружия Шерифа
+
+-- 1. Увеличение зоны подбора упавшего пистолета (GunDrop)
+task.spawn(function()
+    while true do
+        task.wait(0.4)
+        local gunDrop = Workspace:FindFirstChild("GunDrop")
+        if gunDrop then
+            local mainPart = gunDrop:IsA("BasePart") and gunDrop or gunDrop:FindFirstChildOfClass("BasePart")
+            if mainPart then
+                if _G.GunHitboxEnabled then
+                    mainPart.Size = Vector3.new(_G.GunHitboxSize, _G.GunHitboxSize, _G.GunHitboxSize)
+                    mainPart.CanCollide = false
+                    mainPart.Transparency = 0.6
+                else
+                    mainPart.Size = Vector3.new(2, 2, 2)
+                    mainPart.Transparency = 0
+                end
+            end
+        end
+    end
+end)
+
+-- 2. Уменьшение хитбоксов Ножа (Мардера) и Оружия/Пули (Шерифа)
+task.spawn(function()
+    while true do
+        task.wait(0.3)
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local char = player.Character
+                local role = getMM2Role(player)
+                
+                -- Уменьшение хитбокса ножа у Мардера
+                if _G.AntiKnifeHitbox and role == "Murderer" then
+                    local knife = char:FindFirstChild("Knife") or (player:FindFirstChild("Backpack") and player.Backpack:FindFirstChild("Knife"))
+                    if knife and knife:FindFirstChild("Handle") then
+                        knife.Handle.Size = Vector3.new(0.01, 0.01, 0.01)
+                    end
+                end
+
+                -- Уменьшение хитбокса выстрела/оружия у Шерифа
+                if _G.AntiBulletHitbox and role == "Sheriff" then
+                    local gun = char:FindFirstChild("Gun") or (player:FindFirstChild("Backpack") and player.Backpack:FindFirstChild("Gun"))
+                    if gun and gun:FindFirstChild("Handle") then
+                        gun.Handle.Size = Vector3.new(0.01, 0.01, 0.01)
+                    end
+                end
+            end
+        end
+    end
+end)
 
 -- ========================================================
--- ПУНКТ 7: СБОРКА ИНТЕРФЕЙСА RAYFIELD
+-- ПУНКТ 8: ОПТИМИЗАЦИЯ ГРАФИКИ И УВЕЛИЧЕНИЕ FPS (FPS BOOSTER)
+-- ========================================================
+
+local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
+
+_G.FPSBoostEnabled = false
+
+local function applyFPSBoost()
+    -- 1. Отключение теней и тумана
+    Lighting.GlobalShadows = false
+    Lighting.FogEnd = 9e9
+    
+    for _, v in ipairs(Lighting:GetChildren()) do
+        if v:IsA("PostEffect") or v:IsA("Atmosphere") then
+            v.Enabled = false
+        end
+    end
+
+    -- 2. Очистка текстур и материалов объектов на карте
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if _G.FPSBoostEnabled then
+            if obj:IsA("BasePart") and not obj:IsA("MeshPart") then
+                obj.Material = Enum.Material.SmoothPlastic
+            elseif obj:IsA("Decal") or obj:IsA("Texture") then
+                obj.Texture = ""
+            elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                obj.Enabled = false
+            end
+        end
+    end
+end
+
+-- Отслеживание включения функции
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if _G.FPSBoostEnabled then
+            applyFPSBoost()
+        end
+    end
+end)
+
+-- ========================================================
+-- МОДУЛЬ: NAME SPOOFER (ФЕЙКОВЫЙ НИК)
+-- ========================================================
+
+_G.FakeName = "" -- Переменная для хранения ника
+
+local function applyFakeName()
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("Humanoid") then
+        if _G.FakeName ~= "" then
+            char.Humanoid.DisplayName = _G.FakeName
+        end
+    end
+end
+
+-- Авто-применение при каждом возрождении
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1) -- Ждем загрузки персонажа
+    applyFakeName()
+end)
+
+-- ========================================================
+-- ПУНКТ 9: СБОРКА ИНТЕРФЕЙСА RAYFIELD
 -- ========================================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -495,7 +712,7 @@ MainTab:CreateDropdown({
 
 -- [1] ESP Игроков
 MainTab:CreateToggle({
-   Name = "ESP / подсветка",
+   Name = "ESP / Подсветка игроков",
    CurrentValue = _G.RolesESP,
    Callback = function(Value)
        _G.RolesESP = Value
@@ -503,32 +720,67 @@ MainTab:CreateToggle({
 })
 
 MainTab:CreateColorPicker({
-    Name = "Innocent ESP Color",
+    Name = "Цвет мирных / Innocent ESP Color",
     Color = _G.InnocentColor,
     Callback = function(Value)
         _G.InnocentColor = Value
     end
 })
 
--- [2] ESP Оружия
+-- [2] ESP Оружия и Зона подбора
 MainTab:CreateToggle({
-   Name = "ESP WEAPON / подсветка оружия",
+   Name = "ESP WEAPON / Подсветка оружия",
    CurrentValue = _G.GunESP,
    Callback = function(Value)
        _G.GunESP = Value
    end,
 })
 
--- [3] Авто-наводка
 MainTab:CreateToggle({
-   Name = "auto-guidance / авто наводка",
+   Name = "Увеличить хитбокс пистолета / Gun Hitbox",
+   CurrentValue = _G.GunHitboxEnabled,
+   Callback = function(Value)
+       _G.GunHitboxEnabled = Value
+   end,
+})
+
+MainTab:CreateSlider({
+   Name = "Дистанция подбора пистолета / Gun Hitbox Size",
+   Range = {10, 30},
+   Increment = 1,
+   CurrentValue = _G.GunHitboxSize,
+   Callback = function(Value)
+       _G.GunHitboxSize = Value
+   end,
+})
+
+-- [3] Защита (Уменьшение хитбоксов врагов)
+MainTab:CreateToggle({
+   Name = "Мини-хитбокс ножа Мардера / Anti-Knife Hitbox",
+   CurrentValue = _G.AntiKnifeHitbox,
+   Callback = function(Value)
+       _G.AntiKnifeHitbox = Value
+   end,
+})
+
+MainTab:CreateToggle({
+   Name = "Мини-хитбокс пуль Шерифа / Anti-Bullet Hitbox",
+   CurrentValue = _G.AntiBulletHitbox,
+   Callback = function(Value)
+       _G.AntiBulletHitbox = Value
+   end,
+})
+
+-- [4] Авто-наводка
+MainTab:CreateToggle({
+   Name = "auto-guidance / Авто наводка",
    CurrentValue = _G.AimbotEnabled,
    Callback = function(Value)
        _G.AimbotEnabled = Value
    end,
 })
 
--- [4] Хитбокс Мардера
+-- [5] Хитбокс Мардера
 MainTab:CreateToggle({
    Name = "Big Murderer Hitbox / Увеличить хитбокс Мардера",
    CurrentValue = _G.HitboxEnabled,
@@ -547,9 +799,9 @@ MainTab:CreateSlider({
    end,
 })
 
--- [5] Автофарм и Скорость
+-- [6] Автофарм и Скорость
 MainTab:CreateToggle({
-   Name = "Avto-farm / авто-фарм",
+   Name = "Avto-farm / Авто-фарм",
    CurrentValue = _G.AutoFarm,
    Callback = function(Value)
        _G.AutoFarm = Value
@@ -557,7 +809,7 @@ MainTab:CreateToggle({
 })
 
 MainTab:CreateSlider({
-   Name = "значение скорости персонажа / Player Speed",
+   Name = "Скорость персонажа / Player Speed",
    Range = {16, 60},
    Increment = 1,
    CurrentValue = _G.FarmSpeed,
@@ -566,9 +818,9 @@ MainTab:CreateSlider({
    end,
 })
 
--- [6] Невидимость и Авто-перезаход
+-- [7] Невидимость и Авто-перезаход
 MainTab:CreateToggle({
-   Name = "Invisibility / невидимость",
+   Name = "Invisibility / Невидимость",
    CurrentValue = _G.Invisibility,
    Callback = function(Value)
        setInvisibility(Value)
@@ -576,12 +828,44 @@ MainTab:CreateToggle({
 })
 
 MainTab:CreateToggle({
-   Name = "Auto-Rejoin / авто перезаход",
+   Name = "Auto-Rejoin / Авто перезаход",
    CurrentValue = _G.AutoRejoin,
    Callback = function(Value)
        _G.AutoRejoin = Value
    end,
 })
 
+MainTab:CreateToggle({
+   Name = "FPS Boost / Оптимизация ФПС",
+   CurrentValue = _G.FPSBoostEnabled,
+   Callback = function(Value)
+       _G.FPSBoostEnabled = Value
+       if Value then
+           applyFPSBoost()
+       end
+   end,
+})
 
+-- Самый конец Блока 9 (в самом низу меню)
+MainTab:CreateToggle({
+   Name = "Anti-AFK / Защита от AFK",
+   CurrentValue = _G.AntiAFK,
+   Callback = function(Value)
+       _G.AntiAFK = Value
+   end,
+})
+
+-- Поле для ввода фейкового ника в 9 блоке
+MainTab:CreateInput({
+   Name = "Fake Name / Фейковый ник",
+   PlaceholderText = "Введите имя...",
+   RemoveTextAfterFocusLost = false,
+   Callback = function(Text)
+       _G.FakeName = Text
+       -- Сразу применяем к текущему персонажу
+       if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+           LocalPlayer.Character.Humanoid.DisplayName = Text
+       end
+   end,
+})
 
