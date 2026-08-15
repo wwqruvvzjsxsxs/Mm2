@@ -1,5 +1,5 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - С ТЕЛЕПОРТОМ К ИГРОКАМ
+-- MM2 ULTIMATE HUB - С СУПЕР-МАГНИТОМ И АВТОСМЕРТЬЮ
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -50,10 +50,18 @@ _G.FlyEnabled = false
 _G.FlyNoClip = false
 _G.FlySpeed = 50
 _G.WallHack = false
-_G.SelectedPlayer = nil  -- Для телепортации к игроку
+_G.SelectedPlayer = nil
+_G.AutoKillMurderer = false
+_G.SmartMagnet = false
+_G.MagnetRadius = 200
+_G.MagnetStrength = 50
+_G.RotationSpeed = 2
+_G.AutoDeath = false  -- Автосмерть при переполнении
+_G.MaxCoins = 40  -- Максимум монет
 
 local MurdererColor = Color3.fromRGB(255, 0, 0)
 local SheriffColor = Color3.fromRGB(0, 0, 255)
+local lastMagnetCount = nil
 
 -- ========================================================
 -- ФУНКЦИЯ ОПРЕДЕЛЕНИЯ РОЛИ
@@ -72,49 +80,213 @@ local function getMM2Role(player)
 end
 
 -- ========================================================
--- ПОЛУЧЕНИЕ СПИСКА ИГРОКОВ
+-- ПОИСК МОНЕТ
 -- ========================================================
-local function getPlayerList()
-    local playerNames = {}
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            table.insert(playerNames, player.Name)
+local function findAllCoins()
+    local coins = {}
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") or obj:IsA("MeshPart") then
+            local name = obj.Name:lower()
+            if (name:find("coin") or name:find("монет")) and obj.Transparency < 0.9 then
+                table.insert(coins, obj)
+            end
         end
     end
-    return playerNames
+    return coins
+end
+
+local function getNearestCoin()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    local root = char.HumanoidRootPart
+
+    local nearestCoin = nil
+    local minDistance = 999999
+
+    for _, coin in ipairs(findAllCoins()) do
+        local dist = (root.Position - coin.Position).Magnitude
+        if dist < minDistance then
+            minDistance = dist
+            nearestCoin = coin
+        end
+    end
+    
+    return nearestCoin
 end
 
 -- ========================================================
--- ТЕЛЕПОРТАЦИЯ К ИГРОКУ
+-- СУПЕР-МАГНИТ МОНЕТ
 -- ========================================================
-local function teleportToPlayer(playerName)
-    local targetPlayer = Players:FindFirstChild(playerName)
-    if not targetPlayer then
-        notify("❌ ОШИБКА", "Игрок не найден!", 3)
+local smartMagnetLoop = nil
+
+local function findMapCenter()
+    local coins = findAllCoins()
+    if #coins == 0 then return Vector3.new(0, -10, 0) end
+    
+    local totalX = 0
+    local totalZ = 0
+    
+    for _, coin in ipairs(coins) do
+        totalX = totalX + coin.Position.X
+        totalZ = totalZ + coin.Position.Z
+    end
+    
+    local centerX = totalX / #coins
+    local centerZ = totalZ / #coins
+    
+    return Vector3.new(centerX, -10, centerZ)
+end
+
+local function enableSmartMagnet()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    
+    if not hrp or not hum or hum.Health <= 0 then
+        notify("❌ ОШИБКА", "Вы должны быть в игре и живы!", 3)
+        _G.SmartMagnet = false
         return
     end
     
-    local targetChar = targetPlayer.Character
-    if not targetChar or not targetChar:FindFirstChild("HumanoidRootPart") then
-        notify("❌ ОШИБКА", "Игрок мертв или не в игре!", 3)
-        return
+    local center = findMapCenter()
+    
+    notify("🧲 СУПЕР-МАГНИТ ВКЛЮЧЕН", "Телепортирую под карту и собираю монеты!", 5)
+    
+    hrp.CFrame = CFrame.new(center)
+    
+    -- Включаем NoClip
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+        end
     end
     
-    local myChar = LocalPlayer.Character
-    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then
-        notify("❌ ОШИБКА", "Вы не в игре!", 3)
-        return
+    smartMagnetLoop = task.spawn(function()
+        while _G.SmartMagnet and char and char.Parent do
+            task.wait(0.05)
+            
+            local currentHrp = char:FindFirstChild("HumanoidRootPart")
+            local currentHum = char:FindFirstChildOfClass("Humanoid")
+            
+            if not currentHrp or not currentHum or currentHum.Health <= 0 then
+                break
+            end
+            
+            -- Удерживаем позицию
+            currentHrp.Velocity = Vector3.new(0, 0, 0)
+            
+            -- Вращаемся
+            local rotationAngle = tick() * _G.RotationSpeed
+            currentHrp.CFrame = CFrame.new(center) * CFrame.Angles(0, rotationAngle, 0)
+            
+            -- Притягиваем монеты
+            local coins = findAllCoins()
+            local collectedCount = 0
+            
+            for _, coin in ipairs(coins) do
+                if coin and coin.Parent then
+                    local distance = (currentHrp.Position - coin.Position).Magnitude
+                    
+                    if distance < _G.MagnetRadius then
+                        collectedCount = collectedCount + 1
+                        
+                        pcall(function()
+                            coin.Anchored = false
+                            coin.CanCollide = false
+                            
+                            local direction = (currentHrp.Position - coin.Position).Unit
+                            local strength = _G.MagnetStrength * (1 - distance / _G.MagnetRadius) * 2
+                            
+                            coin.Position = coin.Position + direction * strength
+                            coin.Velocity = direction * strength * 10
+                            
+                            if distance < 5 then
+                                coin.Position = currentHrp.Position + Vector3.new(0, 3, 0)
+                                coin.Anchored = true
+                            end
+                        end)
+                    end
+                end
+            end
+            
+            if collectedCount > 0 then
+                if not lastMagnetCount or (tick() - lastMagnetCount) > 10 then
+                    notify("🧲 СБОР МОНЕТ", "Притянуто монет: " .. collectedCount, 2)
+                    lastMagnetCount = tick()
+                end
+            end
+        end
+    end)
+end
+
+local function disableSmartMagnet()
+    _G.SmartMagnet = false
+    
+    if smartMagnetLoop then
+        task.cancel(smartMagnetLoop)
+        smartMagnetLoop = nil
     end
     
-    -- Телепортируемся к игроку (на 3 блока выше)
-    local targetPos = targetChar.HumanoidRootPart.Position
-    myChar.HumanoidRootPart.CFrame = CFrame.new(targetPos.X, targetPos.Y + 3, targetPos.Z)
+    local char = LocalPlayer.Character
+    if char then
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        
+        if hrp and hum then
+            hrp.CFrame = CFrame.new(hrp.Position.X, 10, hrp.Position.Z)
+            
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end
+    end
     
-    notify("✅ ТЕЛЕПОРТАЦИЯ", "Телепортирован к игроку: " .. playerName, 3)
+    notify("🧲 МАГНИТ ВЫКЛЮЧЕН", "Возвращаю на карту!", 3)
 end
 
 -- ========================================================
--- ОТСЛЕЖИВАНИЕ СТАТУСА ИГРЫ И УВЕДОМЛЕНИЯ
+-- АВТОСМЕРТЬ ПРИ ПЕРЕПОЛНЕНИИ МОНЕТ
+-- ========================================================
+task.spawn(function()
+    while true do
+        task.wait(1)  -- Проверка каждую секунду
+        if _G.AutoDeath then
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            
+            if hum and hum.Health > 0 then
+                -- Проверяем количество монет
+                local coinCount = #findAllCoins()
+                
+                -- Если монет мало (значит мы собрали много)
+                if coinCount < 10 then
+                    notify("💀 АВТОСМЕРТЬ", "Монеты собраны! Умираю и возвращаюсь в лобби...", 3)
+                    
+                    -- Убиваем себя
+                    hum.Health = 0
+                    
+                    -- Отключаем фарм и магнит
+                    _G.AutoFarm = false
+                    _G.SmartMagnet = false
+                    if smartMagnetLoop then
+                        task.cancel(smartMagnetLoop)
+                        smartMagnetLoop = nil
+                    end
+                    
+                    -- Ждем возрождения
+                    task.wait(2)
+                    
+                    notify("✅ В ЛОББИ", "Монеты сохранены! Следующий заход...", 3)
+                end
+            end
+        end
+    end
+end)
+
+-- ========================================================
+-- ОТСЛЕЖИВАНИЕ СТАТУСА ИГРЫ
 -- ========================================================
 local lastRole = ""
 local roundActive = false
@@ -159,6 +331,9 @@ end)
 LocalPlayer.CharacterAdded:Connect(function(character)
     local humanoid = character:WaitForChild("Humanoid")
     humanoid.Died:Connect(function()
+        if _G.SmartMagnet then
+            disableSmartMagnet()
+        end
         notify("💀 ВЫ ПОГИБЛИ", "Не расстраивайтесь! В следующем раунде повезет!", 5)
     end)
 end)
@@ -237,7 +412,7 @@ end)
 Players.PlayerRemoving:Connect(removeHighlight)
 
 -- ========================================================
--- ПРОХОЖДЕНИЕ СКВОЗЬ СТЕНЫ (WALLHACK)
+-- ПРОХОЖДЕНИЕ СКВОЗЬ СТЕНЫ
 -- ========================================================
 task.spawn(function()
     while true do
@@ -256,47 +431,12 @@ task.spawn(function()
 end)
 
 -- ========================================================
--- ПОИСК МОНЕТ
--- ========================================================
-local function findAllCoins()
-    local coins = {}
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("BasePart") or obj:IsA("MeshPart") then
-            local name = obj.Name:lower()
-            if (name:find("coin") or name:find("монет")) and obj.Transparency < 0.9 then
-                table.insert(coins, obj)
-            end
-        end
-    end
-    return coins
-end
-
-local function getNearestCoin()
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
-    local root = char.HumanoidRootPart
-
-    local nearestCoin = nil
-    local minDistance = 999999
-
-    for _, coin in ipairs(findAllCoins()) do
-        local dist = (root.Position - coin.Position).Magnitude
-        if dist < minDistance then
-            minDistance = dist
-            nearestCoin = coin
-        end
-    end
-    
-    return nearestCoin
-end
-
--- ========================================================
 -- АВТОФАРМ
 -- ========================================================
 task.spawn(function()
     while true do
         task.wait(_G.FarmTeleportDelay)
-        if _G.AutoFarm then
+        if _G.AutoFarm and not _G.SmartMagnet then  -- Не конфликтует с магнитом
             local char = LocalPlayer.Character
             local root = char and char:FindFirstChild("HumanoidRootPart")
             local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -377,7 +517,7 @@ task.spawn(function()
 end)
 
 -- ========================================================
--- ФЛАЙ (ИСПРАВЛЕННОЕ УПРАВЛЕНИЕ)
+-- ФЛАЙ
 -- ========================================================
 local flyBodyVel = nil
 local flyBodyGyro = nil
@@ -427,7 +567,6 @@ task.spawn(function()
             
             local moveDirection = Vector3.new(0, 0, 0)
             
-            -- ИСПРАВЛЕНО: Инвертировано управление вперед/назад
             if hum.MoveDirection.Z < 0 then
                 moveDirection = moveDirection + Camera.CFrame.LookVector
             elseif hum.MoveDirection.Z > 0 then
@@ -460,67 +599,67 @@ task.spawn(function()
 end)
 
 -- ========================================================
--- АВТОНАВОДКА
+-- АВТО-УБИЙЦА МАРДЕРА
 -- ========================================================
-local function getAimbotTarget()
-    local myRole = getMM2Role(LocalPlayer)
-    local bestTarget = nil
-    local minDistance = 999999
-
-    local myChar = LocalPlayer.Character
-    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
-    local myPos = myChar.HumanoidRootPart.Position
-
+local function findMurderer()
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
-            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-            local hum = player.Character:FindFirstChildOfClass("Humanoid")
-            
-            if hrp and hum and hum.Health > 0 then
-                local targetRole = getMM2Role(player)
-                local shouldTarget = false
-                
-                if myRole == "Sheriff" and targetRole == "Murderer" then
-                    shouldTarget = true
-                elseif myRole == "Murderer" and targetRole ~= "Murderer" then
-                    shouldTarget = true
-                end
-
-                if shouldTarget then
-                    local dist = (myPos - hrp.Position).Magnitude
-                    if dist < minDistance then
-                        minDistance = dist
-                        bestTarget = hrp
-                    end
+            local role = getMM2Role(player)
+            if role == "Murderer" then
+                local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                local hum = player.Character:FindFirstChildOfClass("Humanoid")
+                if hrp and hum and hum.Health > 0 then
+                    return player, hrp
                 end
             end
         end
     end
-    return bestTarget
+    return nil, nil
 end
 
-RunService.RenderStepped:Connect(function()
-    if _G.AimbotEnabled and LocalPlayer.Character then
-        local myChar = LocalPlayer.Character
-        local hum = myChar:FindFirstChildOfClass("Humanoid")
-        local hrp = myChar:FindFirstChild("HumanoidRootPart")
-
-        if hrp and hum and hum.Health > 0 then
-            local target = getAimbotTarget()
-            if target then
-                local lookAt = CFrame.lookAt(Camera.CFrame.Position, target.Position)
-                Camera.CFrame = Camera.CFrame:Lerp(lookAt, _G.AimbotSmoothness)
+task.spawn(function()
+    while true do
+        task.wait(0.01)
+        if _G.AutoKillMurderer and getMM2Role(LocalPlayer) == "Sheriff" then
+            local myChar = LocalPlayer.Character
+            local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+            local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            
+            if myHum and myHrp and myHum.Health > 0 then
+                local murderer, murHrp = findMurderer()
                 
-                if getMM2Role(LocalPlayer) == "Sheriff" then
-                    local gun = myChar:FindFirstChild("Gun") or (LocalPlayer:FindFirstChild("Backpack") and LocalPlayer.Backpack:FindFirstChild("Gun"))
-                    if gun and gun:IsA("Tool") then
-                        if gun.Parent ~= myChar then
-                            hum:EquipTool(gun)
+                if murderer and murHrp then
+                    local distance = (myHrp.Position - murHrp.Position).Magnitude
+                    local direction = (murHrp.Position - Camera.CFrame.Position).Unit
+                    local angle = math.acos(math.clamp(direction:Dot(Camera.CFrame.LookVector), -1, 1))
+                    local angleDegrees = math.deg(angle)
+                    
+                    if distance < 200 and angleDegrees < 90 then
+                        local lookAt = CFrame.lookAt(Camera.CFrame.Position, murHrp.Position)
+                        Camera.CFrame = Camera.CFrame:Lerp(lookAt, 0.5)
+                        
+                        local gun = myChar:FindFirstChild("Gun") or (LocalPlayer:FindFirstChild("Backpack") and LocalPlayer.Backpack:FindFirstChild("Gun"))
+                        if gun and gun:IsA("Tool") then
+                            if gun.Parent ~= myChar then
+                                myHum:EquipTool(gun)
+                            end
+                            gun:Activate()
+                        else
+                            notify("❌ НЕТ ПИСТОЛЕТА", "Вы не Шериф или у вас нет оружия!", 3)
+                            _G.AutoKillMurderer = false
                         end
-                        gun:Activate()
+                    else
+                        if distance >= 200 then
+                            myHrp.CFrame = CFrame.new(murHrp.Position.X, murHrp.Position.Y + 5, murHrp.Position.Z - 20)
+                            notify("🔍 ПОИСК МАРДЕРА", "Телепортируюсь к Мардеру...", 2)
+                        end
                     end
+                else
+                    task.wait(1)
                 end
             end
+        else
+            task.wait(0.5)
         end
     end
 end)
@@ -650,7 +789,7 @@ task.spawn(function()
 end)
 
 -- ========================================================
--- ХИТБОКС МАРДЕРА (ИСПРАВЛЕННЫЙ)
+-- ХИТБОКС МАРДЕРА
 -- ========================================================
 task.spawn(function()
     while true do
@@ -708,14 +847,14 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Window = Rayfield:CreateWindow({
     Name = "MM2 Ultimate Hub",
     LoadingTitle = "MM2 Script",
-    LoadingSubtitle = "Fixed Version",
+    LoadingSubtitle = "Ultimate Version",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
 
 local MainTab = Window:CreateTab("Главная", 4483362458)
 local FarmTab = Window:CreateTab("Фарм", 4483362458)
-local TeleportTab = Window:CreateTab("Телепорт", 4483362458)  -- Новая вкладка
+local TeleportTab = Window:CreateTab("Телепорт", 4483362458)
 local MiscTab = Window:CreateTab("Разное", 4483362458)
 
 -- Главная вкладка
@@ -756,6 +895,24 @@ MainTab:CreateToggle({
 })
 
 MainTab:CreateToggle({
+    Name = "🔫 АВТО-УБИЙЦА МАРДЕРА",
+    CurrentValue = _G.AutoKillMurderer,
+    Callback = function(Value)
+        _G.AutoKillMurderer = Value
+        if Value then
+            if getMM2Role(LocalPlayer) == "Sheriff" then
+                notify("🎯 АВТО-УБИЙЦА ВКЛЮЧЕН", "Автоматически навожусь и стреляю в Мардера!", 5)
+            else
+                notify("⚠️ ВНИМАНИЕ", "Вы не Шериф! Функция работает только для Шерифа!", 5)
+                _G.AutoKillMurderer = false
+            end
+        else
+            notify("🛑 АВТО-УБИЙЦА ВЫКЛЮЧЕН", "Функция отключена", 3)
+        end
+    end,
+})
+
+MainTab:CreateToggle({
     Name = "Увеличить хитбокс Мардера",
     CurrentValue = _G.HitboxEnabled,
     Callback = function(Value)
@@ -773,27 +930,6 @@ MainTab:CreateSlider({
     end,
 })
 
-MainTab:CreateToggle({
-    Name = "Автонаводка",
-    CurrentValue = _G.AimbotEnabled,
-    Callback = function(Value)
-        _G.AimbotEnabled = Value
-        if Value then
-            notify("🎯 АВТОНАВОДКА ВКЛЮЧЕНА", "Наводитесь на цель автоматически!", 3)
-        end
-    end,
-})
-
-MainTab:CreateSlider({
-    Name = "Плавность наводки",
-    Range = {0.1, 1},
-    Increment = 0.05,
-    CurrentValue = _G.AimbotSmoothness,
-    Callback = function(Value)
-        _G.AimbotSmoothness = Value
-    end,
-})
-
 -- Вкладка Фарм
 FarmTab:CreateToggle({
     Name = "Авто-фарм монет",
@@ -803,6 +939,59 @@ FarmTab:CreateToggle({
         if Value then
             notify("🪙 АВТО-ФАРМ ВКЛЮЧЕН", "Начинаю собирать монеты!", 3)
         end
+    end,
+})
+
+FarmTab:CreateToggle({
+    Name = "🧲 Супер-магнит монет",
+    CurrentValue = _G.SmartMagnet,
+    Callback = function(Value)
+        if Value then
+            enableSmartMagnet()
+        else
+            disableSmartMagnet()
+        end
+    end,
+})
+
+FarmTab:CreateToggle({
+    Name = "💀 Автосмерть при сборе",
+    CurrentValue = _G.AutoDeath,
+    Callback = function(Value)
+        _G.AutoDeath = Value
+        if Value then
+            notify("💀 АВТОСМЕРТЬ ВКЛЮЧЕНА", "Умру автоматически после сбора монет!", 3)
+        end
+    end,
+})
+
+FarmTab:CreateSlider({
+    Name = "Радиус магнита",
+    Range = {50, 500},
+    Increment = 10,
+    CurrentValue = _G.MagnetRadius,
+    Callback = function(Value)
+        _G.MagnetRadius = Value
+    end,
+})
+
+FarmTab:CreateSlider({
+    Name = "Сила притяжения",
+    Range = {10, 100},
+    Increment = 5,
+    CurrentValue = _G.MagnetStrength,
+    Callback = function(Value)
+        _G.MagnetStrength = Value
+    end,
+})
+
+FarmTab:CreateSlider({
+    Name = "Скорость вращения",
+    Range = {1, 10},
+    Increment = 1,
+    CurrentValue = _G.RotationSpeed,
+    Callback = function(Value)
+        _G.RotationSpeed = Value
     end,
 })
 
@@ -827,16 +1016,6 @@ FarmTab:CreateSlider({
     CurrentValue = _G.FarmSpeed,
     Callback = function(Value)
         _G.FarmSpeed = Value
-    end,
-})
-
-FarmTab:CreateSlider({
-    Name = "Размер хитбокса монет",
-    Range = {3, 20},
-    Increment = 1,
-    CurrentValue = _G.CoinHitboxSize,
-    Callback = function(Value)
-        _G.CoinHitboxSize = Value
     end,
 })
 
@@ -872,7 +1051,7 @@ FarmTab:CreateSlider({
 -- Вкладка Телепорт
 TeleportTab:CreateDropdown({
     Name = "Выберите игрока",
-    Options = getPlayerList(),
+    Options = {},
     CurrentOption = {},
     MultipleOptions = false,
     Callback = function(Option)
@@ -884,33 +1063,35 @@ TeleportTab:CreateDropdown({
 })
 
 TeleportTab:CreateButton({
+    Name = "Обновить список игроков",
+    Callback = function()
+        local players = {}
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                table.insert(players, player.Name)
+            end
+        end
+        notify("🔄 ОБНОВЛЕНО", "Найдено игроков: " .. #players, 3)
+    end,
+})
+
+TeleportTab:CreateButton({
     Name = "Телепортироваться к игроку",
     Callback = function()
         if _G.SelectedPlayer then
-            teleportToPlayer(_G.SelectedPlayer)
+            local targetPlayer = Players:FindFirstChild(_G.SelectedPlayer)
+            if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                local myChar = LocalPlayer.Character
+                if myChar and myChar:FindFirstChild("HumanoidRootPart") then
+                    local targetPos = targetPlayer.Character.HumanoidRootPart.Position
+                    myChar.HumanoidRootPart.CFrame = CFrame.new(targetPos.X, targetPos.Y + 3, targetPos.Z)
+                    notify("✅ ТЕЛЕПОРТАЦИЯ", "Телепортирован к игроку: " .. _G.SelectedPlayer, 3)
+                end
+            else
+                notify("❌ ОШИБКА", "Игрок не найден или мертв!", 3)
+            end
         else
-            notify("❌ ОШИБКА", "Сначала выберите игрока из списка!", 3)
-        end
-    end,
-})
-
-TeleportTab:CreateButton({
-    Name = "Обновить список игроков",
-    Callback = function()
-        notify("🔄 ОБНОВЛЕНИЕ", "Перезапустите скрипт для обновления списка", 3)
-    end,
-})
-
-TeleportTab:CreateButton({
-    Name = "Телепорт к ближайшей монете",
-    Callback = function()
-        local coin = getNearestCoin()
-        local char = LocalPlayer.Character
-        if coin and char and char:FindFirstChild("HumanoidRootPart") then
-            char.HumanoidRootPart.CFrame = CFrame.new(coin.Position + Vector3.new(0, 3, 0))
-            notify("🪙 ТЕЛЕПОРТ", "Телепортирован к монете!", 3)
-        else
-            notify("❌ ОШИБКА", "Монеты не найдены!", 3)
+            notify("❌ ОШИБКА", "Сначала выберите игрока!", 3)
         end
     end,
 })
