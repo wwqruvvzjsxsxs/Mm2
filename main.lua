@@ -1,5 +1,5 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - ПОЛНАЯ ВЕРСИЯ С УВЕДОМЛЕНИЯМИ
+-- MM2 ULTIMATE HUB - С ТЕЛЕПОРТОМ К ИГРОКАМ
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -10,7 +10,6 @@ local GuiService = game:GetService("GuiService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 local VirtualUser = game:GetService("VirtualUser")
-local TweenService = game:GetService("TweenService")
 
 -- ========================================================
 -- СИСТЕМА УВЕДОМЛЕНИЙ
@@ -33,8 +32,6 @@ _G.RolesESP = true
 _G.InnocentColor = Color3.fromRGB(0, 255, 0)
 _G.ESPTransparency = 0.4
 _G.GunESP = true
-_G.GunHitboxEnabled = false
-_G.GunHitboxSize = 10
 _G.AimbotEnabled = false
 _G.AimbotSmoothness = 0.3
 _G.AutoFarm = false
@@ -52,6 +49,8 @@ _G.FakeName = ""
 _G.FlyEnabled = false
 _G.FlyNoClip = false
 _G.FlySpeed = 50
+_G.WallHack = false
+_G.SelectedPlayer = nil  -- Для телепортации к игроку
 
 local MurdererColor = Color3.fromRGB(255, 0, 0)
 local SheriffColor = Color3.fromRGB(0, 0, 255)
@@ -73,6 +72,48 @@ local function getMM2Role(player)
 end
 
 -- ========================================================
+-- ПОЛУЧЕНИЕ СПИСКА ИГРОКОВ
+-- ========================================================
+local function getPlayerList()
+    local playerNames = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(playerNames, player.Name)
+        end
+    end
+    return playerNames
+end
+
+-- ========================================================
+-- ТЕЛЕПОРТАЦИЯ К ИГРОКУ
+-- ========================================================
+local function teleportToPlayer(playerName)
+    local targetPlayer = Players:FindFirstChild(playerName)
+    if not targetPlayer then
+        notify("❌ ОШИБКА", "Игрок не найден!", 3)
+        return
+    end
+    
+    local targetChar = targetPlayer.Character
+    if not targetChar or not targetChar:FindFirstChild("HumanoidRootPart") then
+        notify("❌ ОШИБКА", "Игрок мертв или не в игре!", 3)
+        return
+    end
+    
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then
+        notify("❌ ОШИБКА", "Вы не в игре!", 3)
+        return
+    end
+    
+    -- Телепортируемся к игроку (на 3 блока выше)
+    local targetPos = targetChar.HumanoidRootPart.Position
+    myChar.HumanoidRootPart.CFrame = CFrame.new(targetPos.X, targetPos.Y + 3, targetPos.Z)
+    
+    notify("✅ ТЕЛЕПОРТАЦИЯ", "Телепортирован к игроку: " .. playerName, 3)
+end
+
+-- ========================================================
 -- ОТСЛЕЖИВАНИЕ СТАТУСА ИГРЫ И УВЕДОМЛЕНИЯ
 -- ========================================================
 local lastRole = ""
@@ -89,7 +130,6 @@ task.spawn(function()
         if hum and hum.Health > 0 then
             local newRole = getMM2Role(LocalPlayer)
             
-            -- Уведомление при смене роли
             if newRole ~= lastRole then
                 lastRole = newRole
                 
@@ -102,20 +142,11 @@ task.spawn(function()
                 end
             end
             
-            -- Уведомление о начале раунда
             if not roundActive then
                 roundActive = true
                 notify("🎮 РАУНД НАЧАЛСЯ!", "Будьте аккуратнее! Осмотритесь вокруг!", 6)
-                
-                task.wait(2)
-                if getMM2Role(LocalPlayer) == "Sheriff" then
-                    notify("💡 ПОДСКАЗКА", "Следите за игроками с ножом! Это Мардер!", 5)
-                elseif getMM2Role(LocalPlayer) == "Innocent" then
-                    notify("💡 ПОДСКАЗКА", "Держитесь подальше от подозрительных игроков!", 5)
-                end
             end
         else
-            -- Мы в лобби или мертвы
             if roundActive then
                 roundActive = false
                 lastRole = ""
@@ -125,53 +156,11 @@ task.spawn(function()
     end
 end)
 
--- Уведомление о смерти
 LocalPlayer.CharacterAdded:Connect(function(character)
     local humanoid = character:WaitForChild("Humanoid")
     humanoid.Died:Connect(function()
         notify("💀 ВЫ ПОГИБЛИ", "Не расстраивайтесь! В следующем раунде повезет!", 5)
     end)
-end)
-
--- Предупреждение о Мардере поблизости (для Шерифа)
-task.spawn(function()
-    while true do
-        task.wait(2)
-        
-        if getMM2Role(LocalPlayer) == "Sheriff" and roundActive then
-            local murdererNearby = false
-            local murdererName = ""
-            
-            for _, player in ipairs(Players:GetPlayers()) do
-                if player ~= LocalPlayer and player.Character then
-                    local role = getMM2Role(player)
-                    if role == "Murderer" then
-                        local myChar = LocalPlayer.Character
-                        local murChar = player.Character
-                        
-                        if myChar and myChar:FindFirstChild("HumanoidRootPart") and 
-                           murChar and murChar:FindFirstChild("HumanoidRootPart") then
-                            
-                            local dist = (myChar.HumanoidRootPart.Position - murChar.HumanoidRootPart.Position).Magnitude
-                            
-                            if dist < 50 then
-                                murdererNearby = true
-                                murdererName = player.Name
-                                break
-                            end
-                        end
-                    end
-                end
-            end
-            
-            if murdererNearby then
-                if not lastMurdererWarning or (tick() - lastMurdererWarning) > 10 then
-                    notify("⚠️ МАРДЕР РЯДОМ!", murdererName .. " находится поблизости! Будьте осторожны!", 5)
-                    lastMurdererWarning = tick()
-                end
-            end
-        end
-    end
 end)
 
 -- ========================================================
@@ -248,6 +237,25 @@ end)
 Players.PlayerRemoving:Connect(removeHighlight)
 
 -- ========================================================
+-- ПРОХОЖДЕНИЕ СКВОЗЬ СТЕНЫ (WALLHACK)
+-- ========================================================
+task.spawn(function()
+    while true do
+        task.wait(0.05)
+        if _G.WallHack then
+            local char = LocalPlayer.Character
+            if char then
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- ========================================================
 -- ПОИСК МОНЕТ
 -- ========================================================
 local function findAllCoins()
@@ -283,7 +291,7 @@ local function getNearestCoin()
 end
 
 -- ========================================================
--- АВТОФАРМ С НАСТРОЙКОЙ СКОРОСТИ
+-- АВТОФАРМ
 -- ========================================================
 task.spawn(function()
     while true do
@@ -294,7 +302,6 @@ task.spawn(function()
             local hum = char and char:FindFirstChildOfClass("Humanoid")
 
             if root and hum and hum.Health > 0 then
-                -- Noclip
                 for _, part in ipairs(char:GetDescendants()) do
                     if part:IsA("BasePart") then
                         part.CanCollide = false
@@ -341,13 +348,6 @@ end)
 -- ========================================================
 local activeGunHighlight = nil
 
-local function clearGunESP()
-    if activeGunHighlight then
-        activeGunHighlight:Destroy()
-        activeGunHighlight = nil
-    end
-end
-
 task.spawn(function()
     while true do
         task.wait(0.3)
@@ -356,7 +356,7 @@ task.spawn(function()
             
             if gunDrop and (gunDrop:IsA("BasePart") or gunDrop:IsA("Model")) then
                 if not activeGunHighlight or activeGunHighlight.Parent ~= gunDrop then
-                    clearGunESP()
+                    if activeGunHighlight then activeGunHighlight:Destroy() end
                     local highlight = Instance.new("Highlight")
                     highlight.Name = "Gun_ESP_Highlight"
                     highlight.FillColor = SheriffColor
@@ -368,16 +368,16 @@ task.spawn(function()
                     activeGunHighlight = highlight
                 end
             else
-                clearGunESP()
+                if activeGunHighlight then activeGunHighlight:Destroy() activeGunHighlight = nil end
             end
         else
-            clearGunESP()
+            if activeGunHighlight then activeGunHighlight:Destroy() activeGunHighlight = nil end
         end
     end
 end)
 
 -- ========================================================
--- ФЛАЙ
+-- ФЛАЙ (ИСПРАВЛЕННОЕ УПРАВЛЕНИЕ)
 -- ========================================================
 local flyBodyVel = nil
 local flyBodyGyro = nil
@@ -398,7 +398,7 @@ task.spawn(function()
         if not hrp or not hum then continue end
         
         if _G.FlyEnabled then
-            if _G.FlyNoClip then
+            if _G.FlyNoClip or _G.WallHack then
                 for _, part in ipairs(char:GetDescendants()) do
                     if part:IsA("BasePart") then
                         part.CanCollide = false
@@ -427,9 +427,10 @@ task.spawn(function()
             
             local moveDirection = Vector3.new(0, 0, 0)
             
-            if hum.MoveDirection.Z > 0 then
+            -- ИСПРАВЛЕНО: Инвертировано управление вперед/назад
+            if hum.MoveDirection.Z < 0 then
                 moveDirection = moveDirection + Camera.CFrame.LookVector
-            elseif hum.MoveDirection.Z < 0 then
+            elseif hum.MoveDirection.Z > 0 then
                 moveDirection = moveDirection - Camera.CFrame.LookVector
             end
             
@@ -649,7 +650,7 @@ task.spawn(function()
 end)
 
 -- ========================================================
--- ХИТБОКС МАРДЕРА
+-- ХИТБОКС МАРДЕРА (ИСПРАВЛЕННЫЙ)
 -- ========================================================
 task.spawn(function()
     while true do
@@ -667,6 +668,14 @@ task.spawn(function()
                                 hrp.Color = Color3.fromRGB(255, 0, 0)
                                 hrp.Material = Enum.Material.ForceField
                                 hrp.CanCollide = false
+                                
+                                for _, part in ipairs(char:GetChildren()) do
+                                    if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                                        part.Size = Vector3.new(_G.HitboxSize, _G.HitboxSize, _G.HitboxSize)
+                                        part.Transparency = _G.HitboxTransparency
+                                        part.CanCollide = false
+                                    end
+                                end
                             end)
                         end
                     end
@@ -699,13 +708,14 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Window = Rayfield:CreateWindow({
     Name = "MM2 Ultimate Hub",
     LoadingTitle = "MM2 Script",
-    LoadingSubtitle = "Full Version",
+    LoadingSubtitle = "Fixed Version",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
 
 local MainTab = Window:CreateTab("Главная", 4483362458)
 local FarmTab = Window:CreateTab("Фарм", 4483362458)
+local TeleportTab = Window:CreateTab("Телепорт", 4483362458)  -- Новая вкладка
 local MiscTab = Window:CreateTab("Разное", 4483362458)
 
 -- Главная вкладка
@@ -717,11 +727,31 @@ MainTab:CreateToggle({
     end,
 })
 
+MainTab:CreateColorPicker({
+    Name = "Цвет мирных игроков",
+    Color = _G.InnocentColor,
+    Callback = function(Value)
+        _G.InnocentColor = Value
+        notify("🎨 ЦВЕТ ОБНОВЛЕН", "Цвет мирных игроков изменен!", 3)
+    end,
+})
+
 MainTab:CreateToggle({
     Name = "ESP Оружия",
     CurrentValue = _G.GunESP,
     Callback = function(Value)
         _G.GunESP = Value
+    end,
+})
+
+MainTab:CreateToggle({
+    Name = "Проходить сквозь стены",
+    CurrentValue = _G.WallHack,
+    Callback = function(Value)
+        _G.WallHack = Value
+        if Value then
+            notify("🚪 WALLHACK ВКЛЮЧЕН", "Теперь вы проходите сквозь стены!", 3)
+        end
     end,
 })
 
@@ -816,7 +846,7 @@ FarmTab:CreateToggle({
     Callback = function(Value)
         _G.FlyEnabled = Value
         if Value then
-            notify("✈️ ФЛАЙ ВКЛЮЧЕН", "Управление: WASD + Прыжок (вверх)", 3)
+            notify("✈️ ФЛАЙ ВКЛЮЧЕН", "Управление: Джойстик + Прыжок (вверх)", 3)
         end
     end,
 })
@@ -836,6 +866,52 @@ FarmTab:CreateSlider({
     CurrentValue = _G.FlySpeed,
     Callback = function(Value)
         _G.FlySpeed = Value
+    end,
+})
+
+-- Вкладка Телепорт
+TeleportTab:CreateDropdown({
+    Name = "Выберите игрока",
+    Options = getPlayerList(),
+    CurrentOption = {},
+    MultipleOptions = false,
+    Callback = function(Option)
+        if Option and Option[1] then
+            _G.SelectedPlayer = Option[1]
+            notify("👤 ИГРОК ВЫБРАН", "Выбран: " .. Option[1], 3)
+        end
+    end,
+})
+
+TeleportTab:CreateButton({
+    Name = "Телепортироваться к игроку",
+    Callback = function()
+        if _G.SelectedPlayer then
+            teleportToPlayer(_G.SelectedPlayer)
+        else
+            notify("❌ ОШИБКА", "Сначала выберите игрока из списка!", 3)
+        end
+    end,
+})
+
+TeleportTab:CreateButton({
+    Name = "Обновить список игроков",
+    Callback = function()
+        notify("🔄 ОБНОВЛЕНИЕ", "Перезапустите скрипт для обновления списка", 3)
+    end,
+})
+
+TeleportTab:CreateButton({
+    Name = "Телепорт к ближайшей монете",
+    Callback = function()
+        local coin = getNearestCoin()
+        local char = LocalPlayer.Character
+        if coin and char and char:FindFirstChild("HumanoidRootPart") then
+            char.HumanoidRootPart.CFrame = CFrame.new(coin.Position + Vector3.new(0, 3, 0))
+            notify("🪙 ТЕЛЕПОРТ", "Телепортирован к монете!", 3)
+        else
+            notify("❌ ОШИБКА", "Монеты не найдены!", 3)
+        end
     end,
 })
 
@@ -879,20 +955,6 @@ MiscTab:CreateInput({
     Callback = function(Text)
         _G.FakeName = Text
         applyFakeName()
-    end,
-})
-
-MiscTab:CreateButton({
-    Name = "Телепорт к ближайшей монете",
-    Callback = function()
-        local coin = getNearestCoin()
-        local char = LocalPlayer.Character
-        if coin and char and char:FindFirstChild("HumanoidRootPart") then
-            char.HumanoidRootPart.CFrame = CFrame.new(coin.Position + Vector3.new(0, 3, 0))
-            notify("🪙 ТЕЛЕПОРТ", "Телепортирован к монете!", 3)
-        else
-            notify("❌ ОШИБКА", "Монеты не найдены!", 3)
-        end
     end,
 })
 
