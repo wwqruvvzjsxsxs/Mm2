@@ -30,6 +30,7 @@ _G.GunColor = Color3.fromRGB(0, 0, 0) -- Черный цвет для оружи
 _G.FlyEnabled = false
 _G.FlySpeed = 50
 _G.PhantomMode = false -- Фантомный призрак
+_G.PhantomColor = Color3.fromRGB(255, 105, 180) -- Розовый цвет для себя
 _G.AutoFarm = false -- Авто фарм
 _G.FarmMode = "OnMap" -- Режим фарма: "OnMap" или "UnderMap"
 _G.FarmDelay = 0.5 -- Задержка между телепортациями
@@ -380,39 +381,43 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ========================================================
--- СИСТЕМА ФАНТОМНОГО ПРИЗРАКА
+-- СИСТЕМА ФАНТОМНОГО ПРИЗРАКА (ИСПРАВЛЕННАЯ)
 -- ========================================================
 local phantomLoop = nil
+local selfHighlight = nil
 
-local function findRandomPlayer()
-    local alivePlayers = {}
+local function findSheriffOrMurderer()
+    local targets = {}
     
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
             local hum = player.Character:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health > 0 then
-                table.insert(alivePlayers, player)
+            local role = getMM2Role(player)
+            
+            if hum and hum.Health > 0 and (role == "Sheriff" or role == "Murderer") then
+                table.insert(targets, player)
             end
         end
     end
     
-    if #alivePlayers == 0 then return nil end
+    if #targets == 0 then return nil end
     
-    local randomIndex = math.random(1, #alivePlayers)
-    return alivePlayers[randomIndex]
+    -- Выбираем случайного шерифа или мардера
+    local randomIndex = math.random(1, #targets)
+    return targets[randomIndex]
 end
 
-local function teleportToRandomPlayer()
+local function teleportToSheriffOrMurderer()
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return false end
     
-    local targetPlayer = findRandomPlayer()
+    local targetPlayer = findSheriffOrMurderer()
     if not targetPlayer or not targetPlayer.Character then return false end
     
     local targetHrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not targetHrp then return false end
     
-    -- Телепортируемся к игроку (немного сбоку)
+    -- Телепортируемся рядом с шерифом/мардером
     local offset = Vector3.new(math.random(-3, 3), 2, math.random(-3, 3))
     char.HumanoidRootPart.CFrame = CFrame.new(targetHrp.Position + offset)
     
@@ -423,37 +428,53 @@ local function activatePhantomMode()
     local char = LocalPlayer.Character
     if not char then return end
     
-    -- Телепортируемся к случайному игроку
-    local teleported = teleportToRandomPlayer()
+    -- Телепортируемся к шерифу или мардеру
+    local teleported = teleportToSheriffOrMurderer()
     if not teleported then
-        notify("❌ ОШИБКА", "Не удалось найти игрока для телепортации!", 3)
+        notify("❌ ОШИБКА", "Не удалось найти шерифа или мардера!", 3)
         _G.PhantomMode = false
         return
     end
     
-    notify("👻 ФАНТОМНЫЙ РЕЖИМ", "Вы телепортированы к игроку! Вас никто не видит!", 5)
+    notify("👻 ФАНТОМНЫЙ РЕЖИМ", "Вы телепортированы! Вас видно, но убить нельзя!", 5)
     
-    -- Запускаем цикл невидимости
+    -- Запускаем цикл фантомного режима
     phantomLoop = task.spawn(function()
         while _G.PhantomMode and char and char.Parent do
             task.wait(0.1)
             
             local hum = char:FindFirstChildOfClass("Humanoid")
             if hum then
-                -- Делаем персонажа невидимым
-                for _, part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-                        part.LocalTransparencyModifier = 1
-                    end
-                end
+                -- Делаем персонажа неуязвимым
+                hum.MaxHealth = 999999
+                hum.Health = 999999
                 
-                -- Отключаем коллизии
+                -- Отключаем коллизии (проходим сквозь стены)
                 for _, part in ipairs(char:GetDescendants()) do
                     if part:IsA("BasePart") then
                         part.CanCollide = false
                         part.CanTouch = false
                         part.CanQuery = false
                     end
+                end
+                
+                -- Создаем розовую подсветку для себя
+                if not selfHighlight or not selfHighlight.Parent then
+                    if selfHighlight then
+                        selfHighlight:Destroy()
+                    end
+                    
+                    selfHighlight = Instance.new("Highlight")
+                    selfHighlight.Name = "Phantom_Self_Highlight"
+                    selfHighlight.FillColor = _G.PhantomColor
+                    selfHighlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    selfHighlight.FillTransparency = 0.3
+                    selfHighlight.OutlineTransparency = 0
+                    selfHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    selfHighlight.Parent = char
+                else
+                    selfHighlight.FillColor = _G.PhantomColor
+                    selfHighlight.FillTransparency = 0.3
                 end
             end
         end
@@ -466,12 +487,24 @@ local function deactivatePhantomMode()
         phantomLoop = nil
     end
     
+    -- Убираем подсветку
+    if selfHighlight then
+        selfHighlight:Destroy()
+        selfHighlight = nil
+    end
+    
     local char = LocalPlayer.Character
     if char then
-        -- Возвращаем видимость
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            -- Возвращаем обычное здоровье
+            hum.MaxHealth = 100
+            hum.Health = 100
+        end
+        
+        -- Возвращаем коллизии
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") then
-                part.LocalTransparencyModifier = 0
                 part.CanCollide = true
                 part.CanTouch = true
                 part.CanQuery = true
@@ -479,7 +512,7 @@ local function deactivatePhantomMode()
         end
     end
     
-    notify("👁️ ФАНТОМНЫЙ РЕЖИМ ВЫКЛЮЧЕН", "Вас снова видно!", 3)
+    notify("👁️ ФАНТОМНЫЙ РЕЖИМ ВЫКЛЮЧЕН", "Вы снова обычный игрок!", 3)
 end
 
 -- ========================================================
@@ -674,11 +707,23 @@ VisualTab:CreateToggle({
     end,
 })
 
+VisualTab:CreateColorPicker({
+    Name = "🎨 Цвет подсветки себя",
+    Color = _G.PhantomColor,
+    Callback = function(Value)
+        _G.PhantomColor = Value
+        if _G.PhantomMode and selfHighlight then
+            selfHighlight.FillColor = Value
+        end
+    end,
+})
+
 VisualTab:CreateSection("Информация о ролях")
 VisualTab:CreateLabel("🔴 Красный - Мардер")
 VisualTab:CreateLabel("🔵 Синий - Шериф")
 VisualTab:CreateLabel("🟢 Зеленый - Невинный (настраиваемый)")
 VisualTab:CreateLabel("⚫ Черный - Оружие (настраиваемый)")
+VisualTab:CreateLabel("🩷 Розовый - Вы (в фантомном режиме)")
 
 -- ========================================================
 -- ВКЛАДКА: ФАРМ
