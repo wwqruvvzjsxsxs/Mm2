@@ -1,5 +1,5 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - НОВАЯ ВЕРСИЯ
+-- MM2 ULTIMATE HUB - ИСПРАВЛЕННАЯ ВЕРСИЯ (WITHOUT CRASH)
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -24,24 +24,25 @@ end
 
 -- Настройки
 _G.ESPEnabled = true
-_G.InnocentColor = Color3.fromRGB(0, 255, 0) -- Зеленый по умолчанию
-_G.MurdererColor = Color3.fromRGB(255, 0, 0) -- Красный (строго)
-_G.SheriffColor = Color3.fromRGB(0, 0, 255) -- Синий (строго)
-_G.GunESP = true -- Подсветка оружия
-_G.GunColor = Color3.fromRGB(0, 0, 0) -- Черный цвет для оружия
+_G.InnocentColor = Color3.fromRGB(0, 255, 0)
+_G.MurdererColor = Color3.fromRGB(255, 0, 0)
+_G.SheriffColor = Color3.fromRGB(0, 0, 255)
+_G.GunESP = true
+_G.GunColor = Color3.fromRGB(0, 0, 0)
 _G.FlyEnabled = false
 _G.FlySpeed = 50
-_G.PhantomMode = false -- Фантомный призрак
-_G.PhantomColor = Color3.fromRGB(255, 105, 180) -- Розовый цвет для себя
-_G.AutoFarm = false -- Авто фарм
-_G.FarmMode = "OnMap" -- Режим фарма: "OnMap" или "UnderMap"
-_G.FarmDelay = 0.5 -- Задержка между телепортациями
-_G.FarmHeight = -3 -- По умолчанию под картой
-_G.HardAimEnabled = true -- Жесткий аимбот
-_G.AimTargetPart = "HumanoidRootPart" -- "Head" или "HumanoidRootPart"
+_G.PhantomMode = false
+_G.PhantomColor = Color3.fromRGB(255, 105, 180)
+_G.AutoFarm = false
+_G.FarmMode = "OnMap"
+_G.FarmDelay = 0.5
+_G.FarmHeight = -3
+_G.HardAimEnabled = true
+_G.AimTargetPart = "HumanoidRootPart"
 
 -- Определение роли
 local function getMM2Role(player)
+    if not player then return "Innocent" end
     local char = player.Character
     if not char then return "Innocent" end
     
@@ -167,64 +168,48 @@ local function updatePlayerESP(player)
 end
 
 -- ========================================================
--- ESP СИСТЕМА (ОРУЖИЕ) - ИСПРАВЛЕННАЯ
+-- ESP СИСТЕМА (ОРУЖИЕ)
 -- ========================================================
 local activeGunHighlights = {}
 
 local function isGunObject(obj)
     local name = obj.Name:lower()
-    
-    -- Более точные проверки для оружия
     if name == "gun" or name == "pistol" or name == "пистолет" then
         return true
     end
-    
-    -- Проверяем, является ли объект Tool с оружейным именем
     if obj:IsA("Tool") and (name:find("gun") or name:find("pistol") or name:find("пистолет")) then
         return true
     end
-    
     return false
 end
 
 local function findGuns()
     local guns = {}
-    
-    -- Ищем только настоящие пистолеты (Tools)
     for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Tool") then
-            if isGunObject(obj) then
-                -- Проверяем, что оружие не у игрока в руках
-                local parent = obj.Parent
-                local isInCharacter = false
-                
-                while parent do
-                    if parent:IsA("Model") and parent:FindFirstChild("Humanoid") then
-                        isInCharacter = true
-                        break
-                    end
-                    parent = parent.Parent
+        if obj:IsA("Tool") and isGunObject(obj) then
+            local parent = obj.Parent
+            local isInCharacter = false
+            while parent do
+                if parent:IsA("Model") and parent:FindFirstChild("Humanoid") then
+                    isInCharacter = true
+                    break
                 end
-                
-                if not isInCharacter then
-                    table.insert(guns, obj)
-                end
+                parent = parent.Parent
+            end
+            if not isInCharacter then
+                table.insert(guns, obj)
             end
         end
     end
     
-    -- Если не нашли Tools, ищем части с именем пистолета
     if #guns == 0 then
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if obj:IsA("BasePart") or obj:IsA("MeshPart") then
                 local name = obj.Name:lower()
-                -- Ищем только конкретные части пистолета, не карту
                 if name == "gun" or name == "pistol" or name == "пистолет" or 
                    name == "gunhandle" or name == "gunbarrel" or name == "gunbody" then
-                    -- Проверяем, что это не часть персонажа
                     local parent = obj.Parent
                     local isInCharacter = false
-                    
                     while parent do
                         if parent:IsA("Model") and parent:FindFirstChild("Humanoid") then
                             isInCharacter = true
@@ -232,7 +217,6 @@ local function findGuns()
                         end
                         parent = parent.Parent
                     end
-                    
                     if not isInCharacter then
                         table.insert(guns, obj)
                     end
@@ -240,12 +224,10 @@ local function findGuns()
             end
         end
     end
-    
     return guns
 end
 
 local function updateGunESP()
-    -- Удаляем старые подсветки
     for gun, highlight in pairs(activeGunHighlights) do
         if highlight and highlight.Parent then
             highlight:Destroy()
@@ -255,7 +237,6 @@ local function updateGunESP()
     
     if not _G.GunESP then return end
     
-    -- Находим и подсвечиваем оружие
     local guns = findGuns()
     for _, gun in ipairs(guns) do
         local highlight = Instance.new("Highlight")
@@ -271,14 +252,13 @@ local function updateGunESP()
         else
             highlight.Parent = gun.Parent
         end
-        
         activeGunHighlights[gun] = highlight
     end
 end
 
 task.spawn(function()
     while true do
-        task.wait(0.2)
+        task.wait(0.3)
         if _G.ESPEnabled then
             for _, player in ipairs(Players:GetPlayers()) do
                 updatePlayerESP(player)
@@ -288,7 +268,6 @@ task.spawn(function()
                 removeHighlight(player)
             end
         end
-        
         updateGunESP()
     end
 end)
@@ -296,44 +275,32 @@ end)
 Players.PlayerRemoving:Connect(removeHighlight)
 
 -- ========================================================
--- СИСТЕМА ФЛАЯ (МОБИЛЬНАЯ ВЕРСИЯ - НАПРАВЛЕНИЕ ОТ КАМЕРЫ)
+-- СИСТЕМА ФЛАЯ
 -- ========================================================
 local flyBodyVelocity = nil
 local flyBodyGyro = nil
 
 local function stopFly()
-    if flyBodyVelocity then
-        flyBodyVelocity:Destroy()
-        flyBodyVelocity = nil
-    end
-    if flyBodyGyro then
-        flyBodyGyro:Destroy()
-        flyBodyGyro = nil
-    end
-    
+    if flyBodyVelocity then flyBodyVelocity:Destroy() flyBodyVelocity = nil end
+    if flyBodyGyro then flyBodyGyro:Destroy() flyBodyGyro = nil end
     local char = LocalPlayer.Character
-    if char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum.PlatformStand = false
-        end
+    if char and char:FindFirstChildOfClass("Humanoid") then
+        char:FindFirstChildOfClass("Humanoid").PlatformStand = false
     end
 end
 
 local function startFly()
     local char = LocalPlayer.Character
     if not char then return end
-    
     local hrp = char:FindFirstChild("HumanoidRootPart")
     local hum = char:FindFirstChildOfClass("Humanoid")
-    
     if not hrp or not hum then return end
     
     hum.PlatformStand = true
     
     flyBodyVelocity = Instance.new("BodyVelocity")
     flyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+    flyBodyVelocity.Velocity = Vector3.zero
     flyBodyVelocity.Parent = hrp
     
     flyBodyGyro = Instance.new("BodyGyro")
@@ -345,10 +312,8 @@ end
 
 RunService.RenderStepped:Connect(function()
     if not _G.FlyEnabled then return end
-    
     local char = LocalPlayer.Character
     if not char then return end
-    
     local hrp = char:FindFirstChild("HumanoidRootPart")
     local hum = char:FindFirstChildOfClass("Humanoid")
     
@@ -357,49 +322,29 @@ RunService.RenderStepped:Connect(function()
         return
     end
     
-    if not flyBodyVelocity or not flyBodyGyro then
-        startFly()
-    end
+    if not flyBodyVelocity or not flyBodyGyro then startFly() end
     
     if flyBodyVelocity and flyBodyGyro then
         local camera = Workspace.CurrentCamera
         if not camera then return end
         
-        -- Получаем полное направление камеры (включая вертикаль)
         local cameraForward = camera.CFrame.LookVector
         local cameraRight = camera.CFrame.RightVector
-        
-        -- Получаем ввод с джойстика
         local joyDirection = hum.MoveDirection
-        
-        -- Вычисляем направление движения
         local moveDirection = Vector3.zero
         
-        -- Вперед (джойстик вверх) - летим куда смотрит камера (включая вверх/вниз)
-        if joyDirection.Z < 0 then
-            moveDirection += cameraForward
-        -- Назад (джойстик вниз) - летим назад от камеры
-        elseif joyDirection.Z > 0 then
-            moveDirection -= cameraForward
-        end
+        if joyDirection.Z < 0 then moveDirection += cameraForward
+        elseif joyDirection.Z > 0 then moveDirection -= cameraForward end
         
-        -- Вправо/влево (стрейф)
-        if joyDirection.X > 0 then
-            moveDirection += cameraRight
-        elseif joyDirection.X < 0 then
-            moveDirection -= cameraRight
-        end
+        if joyDirection.X > 0 then moveDirection += cameraRight
+        elseif joyDirection.X < 0 then moveDirection -= cameraRight end
         
-        -- Если есть движение - нормализуем
         if moveDirection.Magnitude > 0 then
             moveDirection = moveDirection.Unit
             flyBodyVelocity.Velocity = moveDirection * _G.FlySpeed
         else
-            -- Полная фиксация в воздухе
             flyBodyVelocity.Velocity = Vector3.zero
         end
-        
-        -- Персонаж смотрит туда же, куда и камера
         flyBodyGyro.CFrame = camera.CFrame
     end
 end)
@@ -412,46 +357,36 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ========================================================
--- СИСТЕМА ФАНТОМНОГО ПРИЗРАКА (ИСПРАВЛЕННАЯ)
+-- СИСТЕМА ФАНТОМНОГО ПРИЗРАКА
 -- ========================================================
 local phantomLoop = nil
 local selfHighlight = nil
 
 local function findSheriffOrMurderer()
     local targets = {}
-    
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
             local hum = player.Character:FindFirstChildOfClass("Humanoid")
             local role = getMM2Role(player)
-            
             if hum and hum.Health > 0 and (role == "Sheriff" or role == "Murderer") then
                 table.insert(targets, player)
             end
         end
     end
-    
     if #targets == 0 then return nil end
-    
-    -- Выбираем случайного шерифа или мардера
-    local randomIndex = math.random(1, #targets)
-    return targets[randomIndex]
+    return targets[math.random(1, #targets)]
 end
 
 local function teleportToSheriffOrMurderer()
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return false end
-    
     local targetPlayer = findSheriffOrMurderer()
     if not targetPlayer or not targetPlayer.Character then return false end
-    
     local targetHrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not targetHrp then return false end
     
-    -- Телепортируемся рядом с шерифом/мардером
     local offset = Vector3.new(math.random(-3, 3), 2, math.random(-3, 3))
     char.HumanoidRootPart.CFrame = CFrame.new(targetHrp.Position + offset)
-    
     return true
 end
 
@@ -459,28 +394,21 @@ local function activatePhantomMode()
     local char = LocalPlayer.Character
     if not char then return end
     
-    -- Телепортируемся к шерифу или мардеру
-    local teleported = teleportToSheriffOrMurderer()
-    if not teleported then
+    if not teleportToSheriffOrMurderer() then
         notify("❌ ОШИБКА", "Не удалось найти шерифа или мардера!", 3)
         _G.PhantomMode = false
         return
     end
     
-    notify("👻 ФАНТОМНЫЙ РЕЖИМ", "Вы телепортированы! Вас видно, но убить нельзя!", 5)
+    notify("👻 ФАНТОМНЫЙ РЕЖИМ", "Вы телепортированы!", 5)
     
-    -- Запускаем цикл фантомного режима
     phantomLoop = task.spawn(function()
         while _G.PhantomMode and char and char.Parent do
             task.wait(0.1)
-            
             local hum = char:FindFirstChildOfClass("Humanoid")
             if hum then
-                -- Делаем персонажа неуязвимым
                 hum.MaxHealth = 999999
                 hum.Health = 999999
-                
-                -- Отключаем коллизии (проходим сквозь стены)
                 for _, part in ipairs(char:GetDescendants()) do
                     if part:IsA("BasePart") then
                         part.CanCollide = false
@@ -489,12 +417,8 @@ local function activatePhantomMode()
                     end
                 end
                 
-                -- Создаем розовую подсветку для себя
                 if not selfHighlight or not selfHighlight.Parent then
-                    if selfHighlight then
-                        selfHighlight:Destroy()
-                    end
-                    
+                    if selfHighlight then selfHighlight:Destroy() end
                     selfHighlight = Instance.new("Highlight")
                     selfHighlight.Name = "Phantom_Self_Highlight"
                     selfHighlight.FillColor = _G.PhantomColor
@@ -505,7 +429,6 @@ local function activatePhantomMode()
                     selfHighlight.Parent = char
                 else
                     selfHighlight.FillColor = _G.PhantomColor
-                    selfHighlight.FillTransparency = 0.3
                 end
             end
         end
@@ -513,27 +436,13 @@ local function activatePhantomMode()
 end
 
 local function deactivatePhantomMode()
-    if phantomLoop then
-        task.cancel(phantomLoop)
-        phantomLoop = nil
-    end
-    
-    -- Убираем подсветку
-    if selfHighlight then
-        selfHighlight:Destroy()
-        selfHighlight = nil
-    end
+    if phantomLoop then task.cancel(phantomLoop) phantomLoop = nil end
+    if selfHighlight then selfHighlight:Destroy() selfHighlight = nil end
     
     local char = LocalPlayer.Character
     if char then
         local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            -- Возвращаем обычное здоровье
-            hum.MaxHealth = 100
-            hum.Health = 100
-        end
-        
-        -- Возвращаем коллизии
+        if hum then hum.MaxHealth = 100 hum.Health = 100 end
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = true
@@ -542,12 +451,11 @@ local function deactivatePhantomMode()
             end
         end
     end
-    
-    notify("👁️ ФАНТОМНЫЙ РЕЖИМ ВЫКЛЮЧЕН", "Вы снова обычный игрок!", 3)
+    notify("👁️ ФАНТОМ ВЫКЛЮЧЕН", "Вы снова обычный игрок!", 3)
 end
 
 -- ========================================================
--- СИСТЕМА АВТО ФАРМА (ИСПРАВЛЕННАЯ)
+-- СИСТЕМА АВТО ФАРМА
 -- ========================================================
 local farmTween = nil
 local farmBodyVelocity = nil
@@ -568,28 +476,19 @@ local function enableUnderMapPhysics()
 end
 
 local function disableFarmPhysics()
-    if farmBodyVelocity then
-        farmBodyVelocity:Destroy()
-        farmBodyVelocity = nil
-    end
-    if farmTween then
-        farmTween:Cancel()
-        farmTween = nil
-    end
+    if farmBodyVelocity then farmBodyVelocity:Destroy() farmBodyVelocity = nil end
+    if farmTween then farmTween:Cancel() farmTween = nil end
 end
 
--- Поиск дна карты под монетой через Raycast (только для UnderMap)
 local function getUnderMapPosition(coinPos)
     local raycastParams = RaycastParams.new()
     raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-    
     local ignoreList = {}
     if LocalPlayer.Character then table.insert(ignoreList, LocalPlayer.Character) end
     for _, coin in ipairs(findAllCoins()) do table.insert(ignoreList, coin) end
     raycastParams.FilterDescendantsInstances = ignoreList
 
     local rayResult = Workspace:Raycast(coinPos, Vector3.new(0, -30, 0), raycastParams)
-    
     if rayResult then
         return Vector3.new(coinPos.X, rayResult.Position.Y + _G.FarmHeight, coinPos.Z)
     else
@@ -614,10 +513,9 @@ end
 task.spawn(function()
     while true do
         task.wait(_G.FarmDelay)
-        
         if _G.AutoFarm then
             if not isInGame() then
-                notify("❌ ОШИБКА", "Вы не в игре! Фарм отключен!", 3)
+                notify("❌ ОШИБКА", "Вы не в игре!", 3)
                 _G.AutoFarm = false
                 disableFarmPhysics()
                 continue
@@ -631,26 +529,18 @@ task.spawn(function()
                 local coin = getNearestCoin()
                 if coin then
                     expandCoinHitbox(coin)
-                    
                     if _G.FarmMode == "UnderMap" then
-                        -- РЕЖИМ "ПОД КАРТОЙ": Плавный Tween + Raycast + Ноуклип
                         for _, part in ipairs(char:GetDescendants()) do
-                            if part:IsA("BasePart") then
-                                part.CanCollide = false
-                            end
+                            if part:IsA("BasePart") then part.CanCollide = false end
                         end
-                        
                         enableUnderMapPhysics()
-                        
                         local targetPos = getUnderMapPosition(coin.Position)
                         local distance = (root.Position - targetPos).Magnitude
-                        local speed = 40 
-                        local tweenTime = math.clamp(distance / speed, 0.05, _G.FarmDelay)
+                        local tweenTime = math.clamp(distance / 40, 0.05, _G.FarmDelay)
                         
                         farmTween = TweenService:Create(root, TweenInfo.new(tweenTime, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
                         farmTween:Play()
                         farmTween.Completed:Wait()
-                        
                         pcall(function()
                             if firetouchinterest then
                                 firetouchinterest(root, coin, 0)
@@ -658,11 +548,8 @@ task.spawn(function()
                             end
                         end)
                     else
-                        -- РЕЖИМ "НА КАРТЕ": Полностью старая работающая логика
                         disableFarmPhysics()
-                        
-                        local targetY = coin.Position.Y + _G.FarmHeight
-                        root.CFrame = CFrame.new(coin.Position.X, targetY, coin.Position.Z)
+                        root.CFrame = CFrame.new(coin.Position.X, coin.Position.Y + _G.FarmHeight, coin.Position.Z)
                         root.Velocity = Vector3.zero
                     end
                 end
@@ -674,115 +561,103 @@ task.spawn(function()
 end)
 
 -- ========================================================
--- СИСТЕМА УБИЙСТВА ВСЕХ (ДЛЯ МАРДЕРА)
+-- УБИЙСТВО ВСЕХ
 -- ========================================================
 local function killAll()
-    -- Проверяем, что мы мардер
     if getMM2Role(LocalPlayer) ~= "Murderer" then
         notify("❌ ОШИБКА", "Вы не Мардер!", 3)
         return
     end
+    if not isInGame() then return end
     
-    -- Проверяем, что мы в игре
-    if not isInGame() then
-        notify("❌ ОШИБКА", "Вы не в игре!", 3)
-        return
-    end
-    
-    notify("💀 УБИЙСТВО ВСЕХ", "Убиваю всех игроков через 2 секунды...", 3)
-    
-    -- Ждем 2 секунды
-    task.wait(2)
+    notify("💀 УБИЙСТВО ВСЕХ", "Убиваю всех игрока...", 3)
+    task.wait(1.5)
     
     local killedCount = 0
-    
-    -- Убиваем всех игроков
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
             local hum = player.Character:FindFirstChildOfClass("Humanoid")
             if hum and hum.Health > 0 then
-                -- Телепортируемся к игроку (для реалистичности)
                 local myChar = LocalPlayer.Character
                 local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
                 local targetHrp = player.Character:FindFirstChild("HumanoidRootPart")
-                
                 if myHrp and targetHrp then
                     myHrp.CFrame = CFrame.new(targetHrp.Position + Vector3.new(0, 2, 0))
                 end
-                
-                -- Убиваем игрока
                 hum.Health = 0
                 killedCount = killedCount + 1
-                
-                -- Небольшая задержка между убийствами
                 task.wait(0.1)
             end
         end
     end
-    
     notify("✅ ПОБЕДА!", "Убито игроков: " .. killedCount, 5)
 end
 
 -- ========================================================
--- ЖЕСТКИЙ АИМБОТ НА МАРДЕРА (ДЛЯ МОБИЛЬНЫХ)
+-- ОПТИМИЗИРОВАННЫЙ АИМБОТ НА МАРДЕРА (БЕЗ КРАШЕЙ)
 -- ========================================================
-local function getMurderer()
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            local hum = player.Character:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health > 0 and getMM2Role(player) == "Murderer" then
-                return player
+
+-- Фоновое кеширование Мардера (раз в 0.5с)
+local cachedMurderer = nil
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if _G.HardAimEnabled then
+            local found = nil
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    local hum = player.Character:FindFirstChildOfClass("Humanoid")
+                    if hum and hum.Health > 0 and getMM2Role(player) == "Murderer" then
+                        found = player
+                        break
+                    end
+                end
             end
+            cachedMurderer = found
+        else
+            cachedMurderer = nil
         end
     end
-    return nil
-end
+end)
 
--- Мгновенная наводка камеры и перехват луча
 local function snapAndShoot()
     if not _G.HardAimEnabled then return end
-    
     local char = LocalPlayer.Character
     if not char then return end
     
-    -- Проверяем, удерживает ли игрок пистолет
     local gun = char:FindFirstChild("Gun") or char:FindFirstChild("Pistol")
     if not gun then return end
 
-    local murderer = getMurderer()
-    if not murderer or not murderer.Character then return end
-
-    local targetPart = murderer.Character:FindFirstChild(_G.AimTargetPart) or murderer.Character:FindFirstChild("HumanoidRootPart")
-    if not targetPart then return end
-
-    -- Мгновенно поворачиваем камеру на Мардера
-    Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPart.Position)
+    if cachedMurderer and cachedMurderer.Character then
+        local targetPart = cachedMurderer.Character:FindFirstChild(_G.AimTargetPart) or cachedMurderer.Character:FindFirstChild("HumanoidRootPart")
+        if targetPart then
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPart.Position)
+        end
+    end
 end
 
--- Срабатывание при каждом тапе по экрану
 UserInputService.TouchTapInWorld:Connect(function()
     snapAndShoot()
 end)
 
--- Хук для 100% попадания пули в цель при выстреле
+-- Легковесный безопасный хук __namecall
 local oldNamecall
 oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     local method = getnamecallmethod()
-    local args = {...}
 
+    -- Быстрая фильтрация метода до любых вычислений
     if _G.HardAimEnabled and not checkcaller() then
-        local char = LocalPlayer.Character
-        if char and (char:FindFirstChild("Gun") or char:FindFirstChild("Pistol")) then
-            local murderer = getMurderer()
-            if murderer and murderer.Character then
-                local targetPart = murderer.Character:FindFirstChild(_G.AimTargetPart) or murderer.Character:FindFirstChild("HumanoidRootPart")
-                if targetPart then
-                    if method == "Raycast" and #args >= 2 then
-                        args[2] = (targetPart.Position - args[1]).Unit * 1000
-                        return oldNamecall(self, unpack(args))
-                    end
-                    if method == "FindPartOnWithIgnoreList" or method == "findPartOnWithIgnoreList" then
-                        if typeof(args[1]) == "Ray" then
+        if method == "Raycast" or method == "FindPartOnWithIgnoreList" or method == "findPartOnWithIgnoreList" then
+            local char = LocalPlayer.Character
+            if char and (char:FindFirstChild("Gun") or char:FindFirstChild("Pistol")) then
+                if cachedMurderer and cachedMurderer.Character then
+                    local targetPart = cachedMurderer.Character:FindFirstChild(_G.AimTargetPart) or cachedMurderer.Character:FindFirstChild("HumanoidRootPart")
+                    if targetPart then
+                        local args = {...}
+                        if method == "Raycast" and #args >= 2 then
+                            args[2] = (targetPart.Position - args[1]).Unit * 1000
+                            return oldNamecall(self, unpack(args))
+                        elseif (method == "FindPartOnWithIgnoreList" or method == "findPartOnWithIgnoreList") and typeof(args[1]) == "Ray" then
                             args[1] = Ray.new(args[1].Origin, (targetPart.Position - args[1].Origin).Unit * 1000)
                             return oldNamecall(self, unpack(args))
                         end
@@ -791,6 +666,7 @@ oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
             end
         end
     end
+
     return oldNamecall(self, ...)
 end))
 
@@ -802,45 +678,29 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Window = Rayfield:CreateWindow({
     Name = "MM2 Ultimate Hub",
     LoadingTitle = "MM2 Script",
-    LoadingSubtitle = "by YourName",
+    LoadingSubtitle = "Fixed Edition",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
 
--- Создаем вкладки
 local CombatTab = Window:CreateTab("⚔️ Сражение", 4483362458)
 local VisualTab = Window:CreateTab("👁️ Визуализация", 4483362458)
 local FarmTab = Window:CreateTab("🪙 Фарм", 4483362458)
 local MiscTab = Window:CreateTab("🔧 Прочее", 4483362458)
 
--- ========================================================
--- ВКЛАДКА: СРАЖЕНИЕ
--- ========================================================
-
 CombatTab:CreateSection("Боевые функции")
-
 CombatTab:CreateButton({
     Name = "💀 Убить всех",
-    Callback = function()
-        killAll()
-    end,
+    Callback = function() killAll() end,
 })
-
-CombatTab:CreateLabel("Убивает всех игроков на карте")
-CombatTab:CreateLabel("Работает только если вы Мардер")
+CombatTab:CreateLabel("Убивает всех игроков на карте (только за Мардера)")
 
 CombatTab:CreateSection("Аимбот")
-
 CombatTab:CreateToggle({
     Name = "🎯 Жесткий аимбот на Мардера",
     CurrentValue = _G.HardAimEnabled,
     Callback = function(Value)
         _G.HardAimEnabled = Value
-        if Value then
-            notify("🎯 АИМБОТ ВКЛЮЧЕН", "Автонаводка на Мардера активна!", 3)
-        else
-            notify("🚫 АИМБОТ ВЫКЛЮЧЕН", "Автонаводка отключена", 3)
-        end
     end,
 })
 
@@ -851,200 +711,111 @@ CombatTab:CreateDropdown({
     MultipleOptions = false,
     Callback = function(Option)
         _G.AimTargetPart = Option[1]
-        notify("🎯 ЦЕЛЬ", "Аимбот целится в: " .. Option[1], 3)
     end,
 })
 
--- ========================================================
--- ВКЛАДКА: ВИЗУАЛИЗАЦИЯ
--- ========================================================
-
 VisualTab:CreateSection("ESP Настройки")
-
 VisualTab:CreateToggle({
     Name = "👁️ ESP / Подсветка игроков",
     CurrentValue = _G.ESPEnabled,
-    Callback = function(Value)
-        _G.ESPEnabled = Value
-        if Value then
-            notify("👁️ ESP ВКЛЮЧЕН", "Игроки подсвечиваются сквозь стены", 3)
-        else
-            notify("🚫 ESP ВЫКЛЮЧЕН", "Подсветка отключена", 3)
-        end
-    end,
+    Callback = function(Value) _G.ESPEnabled = Value end,
 })
-
 VisualTab:CreateColorPicker({
     Name = "🎨 Цвет невинных игроков",
     Color = _G.InnocentColor,
-    Callback = function(Value)
-        _G.InnocentColor = Value
-    end,
+    Callback = function(Value) _G.InnocentColor = Value end,
 })
 
 VisualTab:CreateSection("Оружие")
-
 VisualTab:CreateToggle({
     Name = "🔫 Подсветка оружия",
     CurrentValue = _G.GunESP,
-    Callback = function(Value)
-        _G.GunESP = Value
-        if Value then
-            notify("🔫 ПОДСВЕТКА ОРУЖИЯ ВКЛЮЧЕНА", "Оружие подсвечивается сквозь стены", 3)
-        else
-            notify("🚫 ПОДСВЕТКА ОРУЖИЯ ВЫКЛЮЧЕНА", "Подсветка отключена", 3)
-        end
-    end,
+    Callback = function(Value) _G.GunESP = Value end,
 })
-
 VisualTab:CreateColorPicker({
     Name = "🎨 Цвет оружия",
     Color = _G.GunColor,
-    Callback = function(Value)
-        _G.GunColor = Value
-    end,
+    Callback = function(Value) _G.GunColor = Value end,
 })
 
 VisualTab:CreateSection("Фантомный режим")
-
 VisualTab:CreateToggle({
     Name = "👻 Фантомный призрак",
     CurrentValue = _G.PhantomMode,
     Callback = function(Value)
         _G.PhantomMode = Value
         if Value then
-            -- Проверяем, идет ли раунд
-            if not isRoundActive() then
-                notify("❌ ОШИБКА", "Раунд еще не начался!", 3)
+            if not isRoundActive() or not isInGame() then
+                notify("❌ ОШИБКА", "Нельзя включить сейчас!", 3)
                 _G.PhantomMode = false
                 return
             end
-            
-            -- Проверяем, жив ли игрок
-            if not isInGame() then
-                notify("❌ ОШИБКА", "Вы мертвы или не в игре!", 3)
-                _G.PhantomMode = false
-                return
-            end
-            
             activatePhantomMode()
         else
             deactivatePhantomMode()
         end
     end,
 })
-
 VisualTab:CreateColorPicker({
     Name = "🎨 Цвет подсветки себя",
     Color = _G.PhantomColor,
     Callback = function(Value)
         _G.PhantomColor = Value
-        if _G.PhantomMode and selfHighlight then
-            selfHighlight.FillColor = Value
-        end
+        if _G.PhantomMode and selfHighlight then selfHighlight.FillColor = Value end
     end,
 })
 
-VisualTab:CreateSection("Информация о ролях")
-VisualTab:CreateLabel("🔴 Красный - Мардер")
-VisualTab:CreateLabel("🔵 Синий - Шериф")
-VisualTab:CreateLabel("🟢 Зеленый - Невинный (настраиваемый)")
-VisualTab:CreateLabel("⚫ Черный - Оружие (настраиваемый)")
-VisualTab:CreateLabel("🩷 Розовый - Вы (в фантомном режиме)")
-
--- ========================================================
--- ВКЛАДКА: ФАРМ
--- ========================================================
-
 FarmTab:CreateSection("Авто фарм")
-
 FarmTab:CreateToggle({
     Name = "🪙 Авто фарм монет",
     CurrentValue = _G.AutoFarm,
     Callback = function(Value)
         _G.AutoFarm = Value
-        if Value then
-            if not isInGame() then
-                notify("❌ ОШИБКА", "Вы не в игре!", 3)
-                _G.AutoFarm = false
-                return
-            end
-            notify("🪙 ФАРМ ВКЛЮЧЕН", "Собираю монеты...", 3)
-        else
-            notify("🚫 ФАРМ ВЫКЛЮЧЕН", "Остановлен", 3)
-            disableFarmPhysics()
-        end
+        if not Value then disableFarmPhysics() end
     end,
 })
-
 FarmTab:CreateDropdown({
     Name = "Режим фарма",
     Options = {"На карте", "Под картой"},
     CurrentOption = {"На карте"},
     MultipleOptions = false,
     Callback = function(Option)
-        if Option[1] == "На карте" then
-            _G.FarmMode = "OnMap"
-            disableFarmPhysics()
-        else
-            _G.FarmMode = "UnderMap"
-        end
-        notify("🔄 РЕЖИМ ФАРМА", "Выбран: " .. Option[1], 3)
+        _G.FarmMode = (Option[1] == "На карте") and "OnMap" or "UnderMap"
+        if _G.FarmMode == "OnMap" then disableFarmPhysics() end
     end,
 })
-
 FarmTab:CreateSlider({
     Name = "Скорость сборки монет",
     Range = {0.1, 2},
     Increment = 0.1,
     Suffix = "сек",
     CurrentValue = _G.FarmDelay,
-    Callback = function(Value)
-        _G.FarmDelay = Value
-    end,
+    Callback = function(Value) _G.FarmDelay = Value end,
 })
-
 FarmTab:CreateSlider({
     Name = "Высота сбора монет",
     Range = {-10, 10},
     Increment = 0.5,
     Suffix = " блоков",
     CurrentValue = -3,
-    Callback = function(Value)
-        _G.FarmHeight = Value
-        notify("📏 ВЫСОТА", "Высота: " .. Value .. " от монеты", 2)
-    end,
+    Callback = function(Value) _G.FarmHeight = Value end,
 })
 
--- ========================================================
--- ВКЛАДКА: ПРОЧЕЕ
--- ========================================================
-
 MiscTab:CreateSection("Флай")
-
 MiscTab:CreateToggle({
     Name = "✈️ Флай",
     CurrentValue = _G.FlyEnabled,
     Callback = function(Value)
         _G.FlyEnabled = Value
-        if Value then
-            startFly()
-            notify("✈️ ФЛАЙ ВКЛЮЧЕН", "Летите куда смотрит камера!", 3)
-        else
-            stopFly()
-            notify("🚫 ФЛАЙ ВЫКЛЮЧЕН", "Вы снова ходите!", 3)
-        end
+        if Value then startFly() else stopFly() end
     end,
 })
-
 MiscTab:CreateSlider({
     Name = "Скорость полета",
     Range = {20, 200},
     Increment = 10,
     CurrentValue = _G.FlySpeed,
-    Callback = function(Value)
-        _G.FlySpeed = Value
-    end,
+    Callback = function(Value) _G.FlySpeed = Value end,
 })
 
-notify("✅ СКРИПТ ЗАГРУЖЕН!", "Базовая версия активирована!", 5)
+notify("✅ ИСПРАВЛЕННЫЙ СКРИПТ", "Аимбот оптимизирован!", 5)
