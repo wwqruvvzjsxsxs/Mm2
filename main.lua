@@ -1,13 +1,13 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - ВЕРСИЯ С THUNDER HUB ФАРМОМ (ИСПРАВЛЕНО)
+-- MM2 ULTIMATE HUB - ФИНАЛЬНАЯ ВЕРСИЯ С ИЗМЕНЕНИЕМ РАЗМЕРА
 -- ========================================================
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
 local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
 
 -- Уведомления
 local function notify(title, text, duration)
@@ -22,11 +22,11 @@ local function notify(title, text, duration)
 end
 
 -- Настройки
-_G.ESPEnabled = false
+_G.ESPEnabled = true
 _G.InnocentColor = Color3.fromRGB(0, 255, 0)
 _G.MurdererColor = Color3.fromRGB(255, 0, 0)
 _G.SheriffColor = Color3.fromRGB(0, 0, 255)
-_G.GunESP = false
+_G.GunESP = true
 _G.GunColor = Color3.fromRGB(0, 0, 0)
 _G.FlyEnabled = false
 _G.FlySpeed = 50
@@ -34,8 +34,10 @@ _G.PhantomMode = false
 _G.PhantomColor = Color3.fromRGB(255, 105, 180)
 _G.AutoFarm = false
 _G.FarmMode = "OnMap"
-_G.FarmDelay = 0.2
-_G.FarmHeight = -2.5  -- ИЗМЕНЕНО: оптимальная глубина для подпольного фарма
+_G.FarmDelay = 0.5
+_G.FarmHeight = -2.5
+_G.SizeEnabled = false
+_G.SizeScale = 0.5 -- 50% размера (0.3 = 30%, 1 = 100%)
 
 local originalGravity = Workspace.Gravity
 
@@ -53,14 +55,17 @@ local function getMM2Role(player)
     return "Innocent"
 end
 
+-- Проверка: в игре ли мы
 local function isInGame()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     return hum and hum.Health > 0
 end
 
+-- Проверка: начался ли раунд
 local function isRoundActive()
     if not isInGame() then return false end
+    
     for _, player in ipairs(Players:GetPlayers()) do
         if player.Character then
             local role = getMM2Role(player)
@@ -69,34 +74,158 @@ local function isRoundActive()
             end
         end
     end
+    
     return false
 end
 
--- Старый поиск монет (оставлен для функции Kill All)
-local function getNearestCoin()
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
-    local root = char.HumanoidRootPart
-    local nearestCoin = nil
-    local minDistance = 999999
-
+-- Поиск монет
+local function findAllCoins()
+    local coins = {}
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("BasePart") or obj:IsA("MeshPart") then
             local name = obj.Name:lower()
             if (name:find("coin") or name:find("монет")) and obj.Transparency < 0.9 then
-                local dist = (root.Position - obj.Position).Magnitude
-                if dist < minDistance then
-                    minDistance = dist
-                    nearestCoin = obj
-                end
+                table.insert(coins, obj)
             end
         end
     end
+    return coins
+end
+
+local function getNearestCoin()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    local root = char.HumanoidRootPart
+
+    local nearestCoin = nil
+    local minDistance = 999999
+
+    for _, coin in ipairs(findAllCoins()) do
+        local dist = (root.Position - coin.Position).Magnitude
+        if dist < minDistance then
+            minDistance = dist
+            nearestCoin = coin
+        end
+    end
+    
     return nearestCoin
 end
 
 -- ========================================================
--- ESP ИГРОКИ
+-- СИСТЕМА ИЗМЕНЕНИЯ РАЗМЕРА
+-- ========================================================
+local originalSizes = {}
+
+local function saveOriginalSizes(char)
+    originalSizes = {}
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") or part:IsA("MeshPart") then
+            originalSizes[part] = {
+                Size = part.Size,
+                CFrame = part.CFrame,
+                Position = part.Position
+            }
+        end
+    end
+end
+
+local function applySizeScale(char, scale)
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    local rootPart = char:FindFirstChild("HumanoidRootPart")
+    
+    if not humanoid or not rootPart then return end
+    
+    -- Масштабируем Humanoid
+    humanoid.HipHeight = humanoid.HipHeight * scale
+    
+    -- Масштабируем все части тела
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            if not originalSizes[part] then
+                originalSizes[part] = {
+                    Size = part.Size,
+                    Position = part.Position
+                }
+            end
+            
+            local originalSize = originalSizes[part].Size
+            part.Size = Vector3.new(
+                originalSize.X * scale,
+                originalSize.Y * scale,
+                originalSize.Z * scale
+            )
+        elseif part:IsA("MeshPart") then
+            if not originalSizes[part] then
+                originalSizes[part] = {
+                    Size = part.Size
+                }
+            end
+            
+            local originalSize = originalSizes[part].Size
+            part.Size = Vector3.new(
+                originalSize.X * scale,
+                originalSize.Y * scale,
+                originalSize.Z * scale
+            )
+        end
+    end
+    
+    -- Масштабируем RootPart отдельно
+    if not originalSizes[rootPart] then
+        originalSizes[rootPart] = {
+            Size = rootPart.Size
+        }
+    end
+    
+    local rootOriginalSize = originalSizes[rootPart].Size
+    rootPart.Size = Vector3.new(
+        rootOriginalSize.X * scale,
+        rootOriginalSize.Y * scale,
+        rootOriginalSize.Z * scale
+    )
+end
+
+local function restoreOriginalSize(char)
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    
+    if humanoid then
+        humanoid.HipHeight = 2 -- Стандартная высота
+    end
+    
+    for part, data in pairs(originalSizes) do
+        if part and part.Parent then
+            part.Size = data.Size
+        end
+    end
+    
+    originalSizes = {}
+end
+
+-- Мониторинг размера
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        
+        if _G.SizeEnabled then
+            local char = LocalPlayer.Character
+            if char then
+                applySizeScale(char, _G.SizeScale)
+            end
+        end
+    end
+end)
+
+-- Применяем размер при возрождении
+LocalPlayer.CharacterAdded:Connect(function(char)
+    if _G.SizeEnabled then
+        task.wait(1)
+        saveOriginalSizes(char)
+        applySizeScale(char, _G.SizeScale)
+    end
+end)
+
+-- ========================================================
+-- ESP СИСТЕМА (ИГРОКИ)
 -- ========================================================
 local activeHighlights = {}
 
@@ -152,18 +281,21 @@ local function updatePlayerESP(player)
 end
 
 -- ========================================================
--- ESP ОРУЖИЕ
+-- ESP СИСТЕМА (ОРУЖИЕ)
 -- ========================================================
 local activeGunHighlights = {}
 
 local function isGunObject(obj)
     local name = obj.Name:lower()
+    
     if name == "gun" or name == "pistol" or name == "пистолет" then
         return true
     end
+    
     if obj:IsA("Tool") and (name:find("gun") or name:find("pistol") or name:find("пистолет")) then
         return true
     end
+    
     return false
 end
 
@@ -171,18 +303,47 @@ local function findGuns()
     local guns = {}
     
     for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Tool") and isGunObject(obj) then
-            local parent = obj.Parent
-            local isInCharacter = false
-            while parent do
-                if parent:IsA("Model") and parent:FindFirstChild("Humanoid") then
-                    isInCharacter = true
-                    break
+        if obj:IsA("Tool") then
+            if isGunObject(obj) then
+                local parent = obj.Parent
+                local isInCharacter = false
+                
+                while parent do
+                    if parent:IsA("Model") and parent:FindFirstChild("Humanoid") then
+                        isInCharacter = true
+                        break
+                    end
+                    parent = parent.Parent
                 end
-                parent = parent.Parent
+                
+                if not isInCharacter then
+                    table.insert(guns, obj)
+                end
             end
-            if not isInCharacter then
-                table.insert(guns, obj)
+        end
+    end
+    
+    if #guns == 0 then
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("BasePart") or obj:IsA("MeshPart") then
+                local name = obj.Name:lower()
+                if name == "gun" or name == "pistol" or name == "пистолет" or 
+                   name == "gunhandle" or name == "gunbarrel" or name == "gunbody" then
+                    local parent = obj.Parent
+                    local isInCharacter = false
+                    
+                    while parent do
+                        if parent:IsA("Model") and parent:FindFirstChild("Humanoid") then
+                            isInCharacter = true
+                            break
+                        end
+                        parent = parent.Parent
+                    end
+                    
+                    if not isInCharacter then
+                        table.insert(guns, obj)
+                    end
+                end
             end
         end
     end
@@ -209,14 +370,20 @@ local function updateGunESP()
         highlight.FillTransparency = 0.2
         highlight.OutlineTransparency = 0
         highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        highlight.Parent = gun:IsA("Model") and gun or gun.Parent
+        
+        if gun:IsA("Model") then
+            highlight.Parent = gun
+        else
+            highlight.Parent = gun.Parent
+        end
+        
         activeGunHighlights[gun] = highlight
     end
 end
 
 task.spawn(function()
     while true do
-        task.wait(0.25)
+        task.wait(0.2)
         if _G.ESPEnabled then
             for _, player in ipairs(Players:GetPlayers()) do
                 updatePlayerESP(player)
@@ -226,6 +393,7 @@ task.spawn(function()
                 removeHighlight(player)
             end
         end
+        
         updateGunESP()
     end
 end)
@@ -233,7 +401,7 @@ end)
 Players.PlayerRemoving:Connect(removeHighlight)
 
 -- ========================================================
--- ФЛАЙ
+-- СИСТЕМА ФЛАЯ
 -- ========================================================
 local flyBodyVelocity = nil
 local flyBodyGyro = nil
@@ -263,13 +431,14 @@ local function startFly()
     
     local hrp = char:FindFirstChild("HumanoidRootPart")
     local hum = char:FindFirstChildOfClass("Humanoid")
+    
     if not hrp or not hum then return end
     
     hum.PlatformStand = true
     
     flyBodyVelocity = Instance.new("BodyVelocity")
     flyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    flyBodyVelocity.Velocity = Vector3.zero
+    flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
     flyBodyVelocity.Parent = hrp
     
     flyBodyGyro = Instance.new("BodyGyro")
@@ -307,19 +476,20 @@ RunService.RenderStepped:Connect(function()
         local moveDirection = Vector3.zero
         
         if joyDirection.Z < 0 then
-            moveDirection = moveDirection + cameraForward
+            moveDirection += cameraForward
         elseif joyDirection.Z > 0 then
-            moveDirection = moveDirection - cameraForward
+            moveDirection -= cameraForward
         end
         
         if joyDirection.X > 0 then
-            moveDirection = moveDirection + cameraRight
+            moveDirection += cameraRight
         elseif joyDirection.X < 0 then
-            moveDirection = moveDirection - cameraRight
+            moveDirection -= cameraRight
         end
         
         if moveDirection.Magnitude > 0 then
-            flyBodyVelocity.Velocity = moveDirection.Unit * _G.FlySpeed
+            moveDirection = moveDirection.Unit
+            flyBodyVelocity.Velocity = moveDirection * _G.FlySpeed
         else
             flyBodyVelocity.Velocity = Vector3.zero
         end
@@ -336,24 +506,28 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ========================================================
--- ФАНТОМ
+-- СИСТЕМА ФАНТОМНОГО ПРИЗРАКА
 -- ========================================================
 local phantomLoop = nil
 local selfHighlight = nil
 
 local function findSheriffOrMurderer()
     local targets = {}
+    
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
             local hum = player.Character:FindFirstChildOfClass("Humanoid")
             local role = getMM2Role(player)
+            
             if hum and hum.Health > 0 and (role == "Sheriff" or role == "Murderer") then
                 table.insert(targets, player)
             end
         end
     end
+    
     if #targets == 0 then return nil end
-    return targets[math.random(1, #targets)]
+    local randomIndex = math.random(1, #targets)
+    return targets[randomIndex]
 end
 
 local function teleportToSheriffOrMurderer()
@@ -368,6 +542,7 @@ local function teleportToSheriffOrMurderer()
     
     local offset = Vector3.new(math.random(-3, 3), 2, math.random(-3, 3))
     char.HumanoidRootPart.CFrame = CFrame.new(targetHrp.Position + offset)
+    
     return true
 end
 
@@ -382,7 +557,7 @@ local function activatePhantomMode()
         return
     end
     
-    notify("👻 ФАНТОМНЫЙ РЕЖИМ", "Вы телепортированы!", 5)
+    notify("👻 ФАНТОМНЫЙ РЕЖИМ", "Вы телепортированы! Вас видно, но убить нельзя!", 5)
     
     phantomLoop = task.spawn(function()
         while _G.PhantomMode and char and char.Parent do
@@ -402,7 +577,10 @@ local function activatePhantomMode()
                 end
                 
                 if not selfHighlight or not selfHighlight.Parent then
-                    if selfHighlight then selfHighlight:Destroy() end
+                    if selfHighlight then
+                        selfHighlight:Destroy()
+                    end
+                    
                     selfHighlight = Instance.new("Highlight")
                     selfHighlight.Name = "Phantom_Self_Highlight"
                     selfHighlight.FillColor = _G.PhantomColor
@@ -413,6 +591,7 @@ local function activatePhantomMode()
                     selfHighlight.Parent = char
                 else
                     selfHighlight.FillColor = _G.PhantomColor
+                    selfHighlight.FillTransparency = 0.3
                 end
             end
         end
@@ -437,6 +616,7 @@ local function deactivatePhantomMode()
             hum.MaxHealth = 100
             hum.Health = 100
         end
+        
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = true
@@ -450,318 +630,181 @@ local function deactivatePhantomMode()
 end
 
 -- ========================================================
--- АВТОФАРМ (ПОЛНОСТЬЮ РАБОЧИЙ МЕТОД THUNDER HUB)
+-- СИСТЕМА АВТО ФАРМА
 -- ========================================================
+local farmTween = nil
+local farmBodyVelocity = nil
 
-local isFarming = false
-local farmPlatform = nil
-local farmConnection = nil
-local currentTween = nil
-local moveSpeed = 30
-
--- Точный поиск монет по структуре MM2
-local function findClosestCoin()
-    local closestDist = math.huge
-    local closestCoin = nil
-    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not root then return nil end
-
-    -- Ищем все CoinContainer в Workspace
-    for _, model in ipairs(Workspace:GetDescendants()) do
-        if model:IsA("Folder") and model.Name == "CoinContainer" then
-            for _, coin in ipairs(model:GetChildren()) do
-                if coin:IsA("BasePart") 
-                    and coin:FindFirstChild("TouchInterest") 
-                    and coin.Name == "Coin_Server" 
-                    and coin.Transparency < 0.9 then
-
-                    local dist = (root.Position - coin.Position).Magnitude
-                    if dist < closestDist then
-                        closestDist = dist
-                        closestCoin = coin
-                    end
-                end
-            end
-        end
-    end
-    
-    return closestCoin
-end
-
-local function createFarmPlatform(root)
-    if farmPlatform then
-        farmPlatform:Destroy()
-    end
-    farmPlatform = Instance.new("Part")
-    farmPlatform.Name = "FarmPlatform"
-    farmPlatform.Size = Vector3.new(8, 1, 8)
-    farmPlatform.Anchored = true
-    farmPlatform.CanCollide = false
-    farmPlatform.Transparency = 1
-    farmPlatform.Position = root.Position + Vector3.new(0, -3, 0)
-    farmPlatform.Parent = Workspace
-end
-
-local function destroyFarmPlatform()
-    if farmPlatform then
-        farmPlatform:Destroy()
-        farmPlatform = nil
-    end
-end
-
-local function enableFarmPhysics()
+local function enableUnderMapPhysics()
     local char = LocalPlayer.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not hum or not root then return end
-
-    Workspace.Gravity = 0
-    hum.PlatformStand = true
-    hum.AutoRotate = false
-
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = false
-            part.AssemblyLinearVelocity = Vector3.zero
-            part.AssemblyAngularVelocity = Vector3.zero
-        end
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local hrp = char.HumanoidRootPart
+    
+    if not farmBodyVelocity or farmBodyVelocity.Parent ~= hrp then
+        if farmBodyVelocity then farmBodyVelocity:Destroy() end
+        farmBodyVelocity = Instance.new("BodyVelocity")
+        farmBodyVelocity.Name = "FarmAntiFall"
+        farmBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        farmBodyVelocity.Velocity = Vector3.zero
+        farmBodyVelocity.Parent = hrp
     end
-
-    createFarmPlatform(root)
 end
 
 local function disableFarmPhysics()
-    Workspace.Gravity = originalGravity
-    destroyFarmPlatform()
+    if farmBodyVelocity then
+        farmBodyVelocity:Destroy()
+        farmBodyVelocity = nil
+    end
+    if farmTween then
+        farmTween:Cancel()
+        farmTween = nil
+    end
+end
 
-    local char = LocalPlayer.Character
-    if char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum.PlatformStand = false
-            hum.AutoRotate = true
-        end
-        for _, part in ipairs(char:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = true
+local function getUnderMapPosition(coinPos)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    
+    local ignoreList = {}
+    if LocalPlayer.Character then table.insert(ignoreList, LocalPlayer.Character) end
+    for _, coin in ipairs(findAllCoins()) do table.insert(ignoreList, coin) end
+    raycastParams.FilterDescendantsInstances = ignoreList
+
+    local rayResult = Workspace:Raycast(coinPos, Vector3.new(0, -30, 0), raycastParams)
+    
+    if rayResult then
+        return Vector3.new(coinPos.X, rayResult.Position.Y + _G.FarmHeight, coinPos.Z)
+    else
+        return Vector3.new(coinPos.X, coinPos.Y + _G.FarmHeight - 2, coinPos.Z)
+    end
+end
+
+local function expandCoinHitbox(coin)
+    pcall(function()
+        if coin:IsA("BasePart") then
+            if not coin:GetAttribute("OriginalSize") then
+                coin:SetAttribute("OriginalSize", coin.Size)
             end
-        end
-    end
-end
-
--- Плавное перемещение к монете с помощью Tween
-local function moveToCoin(coin)
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root or not coin then return false end
-
-    local depth = (_G.FarmMode == "UnderMap") and _G.FarmHeight or -1
-    local targetPos = coin.Position + Vector3.new(0, depth, 0)
-    
-    -- Отменяем предыдущий твин если есть
-    if currentTween then
-        currentTween:Cancel()
-    end
-
-    local distance = (targetPos - root.Position).Magnitude
-    local duration = math.clamp(distance / moveSpeed, 0.1, 1.5)
-    
-    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
-    currentTween = TweenService:Create(root, tweenInfo, {
-        CFrame = CFrame.new(targetPos)
-    })
-    
-    currentTween:Play()
-    currentTween.Completed:Wait()
-    
-    -- После достижения позиции - лежим для лучшего срабатывания
-    root.CFrame = CFrame.new(targetPos) * CFrame.Angles(math.rad(90), 0, 0)
-    root.AssemblyLinearVelocity = Vector3.zero
-    root.AssemblyAngularVelocity = Vector3.zero
-    
-    task.wait(0.05)
-    
-    -- Пытаемся собрать монету разными способами
-    pcall(function()
-        if firetouchinterest then
-            firetouchinterest(root, coin, 0)
-            task.wait()
-            firetouchinterest(root, coin, 1)
+            local originalSize = coin:GetAttribute("OriginalSize")
+            coin.Size = Vector3.new(originalSize.X * 3, originalSize.Y * 3, originalSize.Z * 3)
+            coin.CanCollide = false
+            coin.Transparency = 0.3
         end
     end)
-    
-    -- Дополнительный способ - прямое уничтожение
-    pcall(function()
-        if coin and coin.Parent then
-            coin:Destroy()
-        end
-    end)
-    
-    return true
 end
 
--- Главный цикл фарма
 task.spawn(function()
     while true do
         task.wait(_G.FarmDelay)
         
-        if _G.AutoFarm and isInGame() then
+        if _G.AutoFarm then
+            if not isInGame() then
+                notify("❌ ОШИБКА", "Вы не в игре! Фарм отключен!", 3)
+                _G.AutoFarm = false
+                disableFarmPhysics()
+                continue
+            end
+            
             local char = LocalPlayer.Character
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
             local root = char and char:FindFirstChild("HumanoidRootPart")
-
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            
             if root and hum and hum.Health > 0 then
-                if not isFarming then
-                    isFarming = true
-                    enableFarmPhysics()
-                    notify("🪙 ФАРМ АКТИВИРОВАН", "Режим: " .. (_G.FarmMode == "UnderMap" and "Под картой" or "На карте"), 3)
-                end
-
-                local coin = findClosestCoin()
+                local coin = getNearestCoin()
                 if coin then
-                    moveToCoin(coin)
-                else
-                    task.wait(0.5)
-                end
-            else
-                if isFarming then
-                    isFarming = false
-                    disableFarmPhysics()
+                    expandCoinHitbox(coin)
+                    
+                    if _G.FarmMode == "UnderMap" then
+                        for _, part in ipairs(char:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                part.CanCollide = false
+                            end
+                        end
+                        
+                        enableUnderMapPhysics()
+                        
+                        local targetPos = getUnderMapPosition(coin.Position)
+                        local distance = (root.Position - targetPos).Magnitude
+                        local speed = 40 
+                        local tweenTime = math.clamp(distance / speed, 0.05, _G.FarmDelay)
+                        
+                        farmTween = TweenService:Create(root, TweenInfo.new(tweenTime, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
+                        farmTween:Play()
+                        farmTween.Completed:Wait()
+                        
+                        pcall(function()
+                            if firetouchinterest then
+                                firetouchinterest(root, coin, 0)
+                                firetouchinterest(root, coin, 1)
+                            end
+                        end)
+                    else
+                        disableFarmPhysics()
+                        
+                        local targetY = coin.Position.Y + _G.FarmHeight
+                        root.CFrame = CFrame.new(coin.Position.X, targetY, coin.Position.Z)
+                        root.Velocity = Vector3.zero
+                    end
                 end
             end
         else
-            if isFarming then
-                isFarming = false
-                disableFarmPhysics()
-            end
-        end
-    end
-end)
-
--- Обработка выхода из игры
-LocalPlayer.CharacterAdded:Connect(function()
-    if _G.AutoFarm then
-        isFarming = false
-        disableFarmPhysics()
-        task.wait(1)
-        if _G.AutoFarm then
-            isFarming = true
-            enableFarmPhysics()
+            disableFarmPhysics()
         end
     end
 end)
 
 -- ========================================================
--- УБИТЬ ВСЕХ
+-- СИСТЕМА УБИЙСТВА ВСЕХ
 -- ========================================================
-local function isPlayerInLobby(player)
-    local char = player.Character
-    if not char then return true end
-    
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return true end
-
-    local lobby = Workspace:FindFirstChild("Lobby") or Workspace:FindFirstChild("LobbySpawn")
-    if lobby then
-        local lobbyPos = lobby:IsA("BasePart") and lobby.Position or (lobby:FindFirstChildWhichIsA("BasePart") and lobby:FindFirstChildWhichIsA("BasePart").Position)
-        if lobbyPos and (hrp.Position - lobbyPos).Magnitude < 120 then
-            return true
-        end
-    end
-
-    local coin = getNearestCoin()
-    if coin and (hrp.Position - coin.Position).Magnitude > 300 then
-        return true
-    end
-
-    return false
-end
-
 local function killAll()
     if getMM2Role(LocalPlayer) ~= "Murderer" then
         notify("❌ ОШИБКА", "Вы не Мардер!", 3)
         return
     end
     
-    local myChar = LocalPlayer.Character
-    if not myChar or not isInGame() then
+    if not isInGame() then
         notify("❌ ОШИБКА", "Вы не в игре!", 3)
         return
     end
-
-    local backpack = LocalPlayer:FindFirstChild("Backpack")
-    local knife = myChar:FindFirstChild("Knife") or (backpack and backpack:FindFirstChild("Knife"))
-
-    if not knife then
-        notify("❌ ОШИБКА", "Нож не найден!", 3)
-        return
-    end
-
-    if knife.Parent == backpack then
-        knife.Parent = myChar
-    end
-
-    local knifeHandle = knife:FindFirstChild("Handle") or knife:FindFirstChildWhichIsA("BasePart")
-    if not knifeHandle then
-        notify("❌ ОШИБКА", "Не найден Handle ножа!", 3)
-        return
-    end
-
-    notify("💀 УБИЙСТВО ВСЕХ", "Начинаю ликвидацию...", 3)
-
+    
+    notify("💀 УБИЙСТВО ВСЕХ", "Убиваю всех игроков через 2 секунды...", 3)
+    
+    task.wait(2)
+    
     local killedCount = 0
-    local myHrp = myChar:FindFirstChild("HumanoidRootPart")
-
+    
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
-            local targetChar = player.Character
-            local hum = targetChar:FindFirstChildOfClass("Humanoid")
-            local targetHrp = targetChar:FindFirstChild("HumanoidRootPart")
-
-            if hum and hum.Health > 0 and targetHrp and not isPlayerInLobby(player) then
-                myHrp.CFrame = targetHrp.CFrame * CFrame.new(0, 0, 1)
-                task.wait(0.05)
-
-                pcall(function()
-                    if firetouchinterest then
-                        firetouchinterest(knifeHandle, targetHrp, 0)
-                        firetouchinterest(knifeHandle, targetHrp, 1)
-                        
-                        local head = targetChar:FindFirstChild("Head")
-                        if head then
-                            firetouchinterest(knifeHandle, head, 0)
-                            firetouchinterest(knifeHandle, head, 1)
-                        end
-                    end
-                    knife:Activate()
-                end)
-
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                local myChar = LocalPlayer.Character
+                local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                local targetHrp = player.Character:FindFirstChild("HumanoidRootPart")
+                
+                if myHrp and targetHrp then
+                    myHrp.CFrame = CFrame.new(targetHrp.Position + Vector3.new(0, 2, 0))
+                end
+                
+                hum.Health = 0
                 killedCount = killedCount + 1
-                task.wait(0.12)
+                
+                task.wait(0.1)
             end
         end
     end
-
-    notify("✅ ГОТОВО!", "Ликвидировано: " .. killedCount, 5)
+    
+    notify("✅ ПОБЕДА!", "Убито игроков: " .. killedCount, 5)
 end
 
 -- ========================================================
 -- ИНТЕРФЕЙС
 -- ========================================================
-local success, Rayfield = pcall(function()
-    return loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-end)
-
-if not success or not Rayfield then
-    notify("❌ ОШИБКА", "Не удалось загрузить Rayfield!", 8)
-    return
-end
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
     Name = "MM2 Ultimate Hub",
     LoadingTitle = "MM2 Script",
-    LoadingSubtitle = "Loaded via Delta",
+    LoadingSubtitle = "by YourName",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -771,28 +814,37 @@ local VisualTab = Window:CreateTab("👁️ Визуализация", 448336245
 local FarmTab = Window:CreateTab("🪙 Фарм", 4483362458)
 local MiscTab = Window:CreateTab("🔧 Прочее", 4483362458)
 
--- СРАЖЕНИЕ
+-- ВКЛАДКА: СРАЖЕНИЕ
 CombatTab:CreateSection("Боевые функции")
+
 CombatTab:CreateButton({
     Name = "💀 Убить всех",
     Callback = function()
         killAll()
     end,
 })
+
+CombatTab:CreateLabel("Убивает всех игроков на карте")
 CombatTab:CreateLabel("Работает только если вы Мардер")
 
--- ВИЗУАЛИЗАЦИЯ
-VisualTab:CreateSection("ESP")
+-- ВКЛАДКА: ВИЗУАЛИЗАЦИЯ
+VisualTab:CreateSection("ESP Настройки")
+
 VisualTab:CreateToggle({
-    Name = "👁️ ESP игроков",
-    CurrentValue = false,
+    Name = "👁️ ESP / Подсветка игроков",
+    CurrentValue = _G.ESPEnabled,
     Callback = function(Value)
         _G.ESPEnabled = Value
-        notify(Value and "👁️ ESP ВКЛЮЧЕН" or "🚫 ESP ВЫКЛЮЧЕН", "", 3)
+        if Value then
+            notify("👁️ ESP ВКЛЮЧЕН", "Игроки подсвечиваются сквозь стены", 3)
+        else
+            notify("🚫 ESP ВЫКЛЮЧЕН", "Подсветка отключена", 3)
+        end
     end,
 })
+
 VisualTab:CreateColorPicker({
-    Name = "Цвет невинных",
+    Name = "🎨 Цвет невинных игроков",
     Color = _G.InnocentColor,
     Callback = function(Value)
         _G.InnocentColor = Value
@@ -800,53 +852,79 @@ VisualTab:CreateColorPicker({
 })
 
 VisualTab:CreateSection("Оружие")
+
 VisualTab:CreateToggle({
     Name = "🔫 Подсветка оружия",
-    CurrentValue = false,
+    CurrentValue = _G.GunESP,
     Callback = function(Value)
         _G.GunESP = Value
-        notify(Value and "🔫 Оружие ВКЛ" or "🚫 Оружие ВЫКЛ", "", 3)
+        if Value then
+            notify("🔫 ПОДСВЕТКА ОРУЖИЯ ВКЛЮЧЕНА", "Оружие подсвечивается сквозь стены", 3)
+        else
+            notify("🚫 ПОДСВЕТКА ОРУЖИЯ ВЫКЛЮЧЕНА", "Подсветка отключена", 3)
+        end
     end,
 })
+
 VisualTab:CreateColorPicker({
-    Name = "Цвет оружия",
+    Name = "🎨 Цвет оружия",
     Color = _G.GunColor,
     Callback = function(Value)
         _G.GunColor = Value
     end,
 })
 
-VisualTab:CreateSection("Фантом")
+VisualTab:CreateSection("Фантомный режим")
+
 VisualTab:CreateToggle({
     Name = "👻 Фантомный призрак",
-    CurrentValue = false,
+    CurrentValue = _G.PhantomMode,
     Callback = function(Value)
         _G.PhantomMode = Value
         if Value then
-            if not isRoundActive() or not isInGame() then
-                notify("❌ ОШИБКА", "Раунд не начался или вы мертвы!", 3)
+            if not isRoundActive() then
+                notify("❌ ОШИБКА", "Раунд еще не начался!", 3)
                 _G.PhantomMode = false
                 return
             end
+            
+            if not isInGame() then
+                notify("❌ ОШИБКА", "Вы мертвы или не в игре!", 3)
+                _G.PhantomMode = false
+                return
+            end
+            
             activatePhantomMode()
         else
             deactivatePhantomMode()
         end
     end,
 })
+
 VisualTab:CreateColorPicker({
-    Name = "Цвет себя",
+    Name = "🎨 Цвет подсветки себя",
     Color = _G.PhantomColor,
     Callback = function(Value)
         _G.PhantomColor = Value
+        if _G.PhantomMode and selfHighlight then
+            selfHighlight.FillColor = Value
+        end
     end,
 })
 
--- ФАРМ
+VisualTab:CreateSection("Информация о ролях")
+VisualTab:CreateLabel("🔴 Красный - Мардер")
+VisualTab:CreateLabel("🔵 Синий - Шериф")
+VisualTab:CreateLabel("🟢 Зеленый - Невинный (настраиваемый)")
+VisualTab:CreateLabel("⚫ Черный - Оружие (настраиваемый)")
+VisualTab:CreateLabel("🩷 Розовый - Вы (в фантомном режиме)")
+
+-- ВКЛАДКА: ФАРМ
 FarmTab:CreateSection("Авто фарм")
+
 FarmTab:CreateToggle({
     Name = "🪙 Авто фарм монет",
-    CurrentValue = false,
+    CurrentValue = _G.AutoFarm,
     Callback = function(Value)
         _G.AutoFarm = Value
         if Value then
@@ -855,10 +933,10 @@ FarmTab:CreateToggle({
                 _G.AutoFarm = false
                 return
             end
-            notify("🪙 ФАРМ ВКЛЮЧЕН", _G.FarmMode == "UnderMap" and "Под картой" or "На карте", 3)
+            notify("🪙 ФАРМ ВКЛЮЧЕН", "Собираю монеты...", 3)
         else
+            notify("🚫 ФАРМ ВЫКЛЮЧЕН", "Остановлен", 3)
             disableFarmPhysics()
-            notify("🚫 ФАРМ ВЫКЛЮЧЕН", "", 3)
         end
     end,
 })
@@ -869,58 +947,109 @@ FarmTab:CreateDropdown({
     CurrentOption = {"На карте"},
     MultipleOptions = false,
     Callback = function(Option)
-        local choice = type(Option) == "table" and Option[1] or Option
-        _G.FarmMode = (choice == "Под картой") and "UnderMap" or "OnMap"
-        notify("🔄 Режим", choice, 3)
+        if Option[1] == "На карте" then
+            _G.FarmMode = "OnMap"
+            disableFarmPhysics()
+        else
+            _G.FarmMode = "UnderMap"
+        end
+        notify("🔄 РЕЖИМ ФАРМА", "Выбран: " .. Option[1], 3)
     end,
 })
 
 FarmTab:CreateSlider({
-    Name = "Скорость сборки",
-    Range = {0.1, 1.2},
-    Increment = 0.05,
+    Name = "Скорость сборки монет",
+    Range = {0.1, 2},
+    Increment = 0.1,
     Suffix = "сек",
-    CurrentValue = 0.2,
+    CurrentValue = _G.FarmDelay,
     Callback = function(Value)
         _G.FarmDelay = Value
     end,
 })
 
 FarmTab:CreateSlider({
-    Name = "Глубина (Под картой)",
-    Range = {-3.5, -1.5},
-    Increment = 0.1,
-    Suffix = "",
+    Name = "Высота сбора монет",
+    Range = {-10, 10},
+    Increment = 0.5,
+    Suffix = " блоков",
     CurrentValue = -2.5,
     Callback = function(Value)
         _G.FarmHeight = Value
+        notify("📏 ВЫСОТА", "Высота: " .. Value .. " от монеты", 2)
     end,
 })
 
--- ПРОЧЕЕ
+-- ВКЛАДКА: ПРОЧЕЕ
+MiscTab:CreateSection("Изменение размера")
+
+MiscTab:CreateToggle({
+    Name = "📏 Уменьшить персонажа",
+    CurrentValue = _G.SizeEnabled,
+    Callback = function(Value)
+        _G.SizeEnabled = Value
+        local char = LocalPlayer.Character
+        
+        if Value then
+            if char then
+                saveOriginalSizes(char)
+                applySizeScale(char, _G.SizeScale)
+                notify("📏 РАЗМЕР ИЗМЕНЕН", "Вы уменьшены до " .. (_G.SizeScale * 100) .. "%", 3)
+            end
+        else
+            if char then
+                restoreOriginalSize(char)
+                notify("📏 РАЗМЕР ВОССТАНОВЛЕН", "Вы снова нормального размера", 3)
+            end
+        end
+    end,
+})
+
+MiscTab:CreateSlider({
+    Name = "Размер персонажа",
+    Range = {20, 100},
+    Increment = 5,
+    Suffix = "%",
+    CurrentValue = 50,
+    Callback = function(Value)
+        _G.SizeScale = Value / 100
+        if _G.SizeEnabled then
+            local char = LocalPlayer.Character
+            if char then
+                saveOriginalSizes(char)
+                applySizeScale(char, _G.SizeScale)
+            end
+        end
+    end,
+})
+
 MiscTab:CreateSection("Флай")
+
 MiscTab:CreateToggle({
     Name = "✈️ Флай",
-    CurrentValue = false,
+    CurrentValue = _G.FlyEnabled,
     Callback = function(Value)
         _G.FlyEnabled = Value
         if Value then
             startFly()
-            notify("✈️ ФЛАЙ ВКЛЮЧЕН", "", 3)
+            notify("✈️ ФЛАЙ ВКЛЮЧЕН", "Летите куда смотрит камера!", 3)
         else
             stopFly()
-            notify("🚫 ФЛАЙ ВЫКЛЮЧЕН", "", 3)
+            notify("🚫 ФЛАЙ ВЫКЛЮЧЕН", "Вы снова ходите!", 3)
         end
     end,
 })
+
 MiscTab:CreateSlider({
-    Name = "Скорость полёта",
-    Range = {20, 180},
+    Name = "Скорость полета",
+    Range = {20, 200},
     Increment = 10,
-    CurrentValue = 50,
+    CurrentValue = _G.FlySpeed,
     Callback = function(Value)
         _G.FlySpeed = Value
     end,
 })
 
-notify("✅ СКРИПТ ЗАГРУЖЕН", "Меню должно появиться", 5)
+notify("✅ СКРИПТ ЗАГРУЖЕН!", "Все функции активированы!", 5)
+
+
