@@ -483,8 +483,33 @@ local function deactivatePhantomMode()
 end
 
 -- ========================================================
--- СИСТЕМА АВТО ФАРМА
+-- СИСТЕМА АВТО ФАРМА (С АНТИ-ПАДЕНИЕМ)
 -- ========================================================
+local antiFallVelocity = nil
+
+local function createAntiFall()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    
+    local hrp = char.HumanoidRootPart
+    
+    if antiFallVelocity then
+        antiFallVelocity:Destroy()
+    end
+    
+    antiFallVelocity = Instance.new("BodyVelocity")
+    antiFallVelocity.MaxForce = Vector3.new(0, math.huge, 0) -- Только вертикальная сила
+    antiFallVelocity.Velocity = Vector3.new(0, 0, 0) -- Держим на месте
+    antiFallVelocity.Parent = hrp
+end
+
+local function removeAntiFall()
+    if antiFallVelocity then
+        antiFallVelocity:Destroy()
+        antiFallVelocity = nil
+    end
+end
+
 task.spawn(function()
     while true do
         task.wait(_G.FarmDelay)
@@ -493,6 +518,7 @@ task.spawn(function()
             if not isInGame() then
                 notify("❌ ОШИБКА", "Вы не в игре! Фарм отключен!", 3)
                 _G.AutoFarm = false
+                removeAntiFall()
                 continue
             end
             
@@ -519,9 +545,15 @@ task.spawn(function()
                     end)
                     
                     if _G.FarmMode == "UnderMap" then
-                        -- Телепортируемся под карту, но близко к монете
+                        -- Телепортируемся под карту
                         root.CFrame = CFrame.new(coin.Position.X, coin.Position.Y - 5, coin.Position.Z)
+                        
+                        -- Создаем анти-падение
+                        createAntiFall()
                     else
+                        -- Убираем анти-падение для режима "На карте"
+                        removeAntiFall()
+                        
                         -- Телепортируемся на карту, прямо к монете
                         root.CFrame = CFrame.new(coin.Position.X, coin.Position.Y + 3, coin.Position.Z)
                     end
@@ -530,8 +562,18 @@ task.spawn(function()
                     root.Velocity = Vector3.new(0, 0, 0)
                 end
             end
+        else
+            -- Если фарм выключен, убираем анти-падение
+            if antiFallVelocity then
+                removeAntiFall()
+            end
         end
     end
+end)
+
+-- Убираем анти-падение при смерти
+LocalPlayer.CharacterAdded:Connect(function()
+    removeAntiFall()
 end)
 
 -- ========================================================
@@ -658,6 +700,7 @@ FarmTab:CreateToggle({
             notify("🪙 ФАРМ ВКЛЮЧЕН", "Собираю монеты...", 3)
         else
             notify("🚫 ФАРМ ВЫКЛЮЧЕН", "Остановлен", 3)
+            removeAntiFall()
         end
     end,
 })
@@ -670,6 +713,7 @@ FarmTab:CreateDropdown({
     Callback = function(Option)
         if Option[1] == "На карте" then
             _G.FarmMode = "OnMap"
+            removeAntiFall()
         else
             _G.FarmMode = "UnderMap"
         end
