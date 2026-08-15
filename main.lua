@@ -757,6 +757,34 @@ task.spawn(function()
 end)
 
 -- ========================================================
+-- МОДУЛЬ: ТЕЛЕПОРТАЦИЯ ПО МОНЕТАМ (Coin Teleport Farm)
+-- ========================================================
+_G.CoinTeleportFarm = false
+
+task.spawn(function()
+    while task.wait(0.2) do
+        if _G.CoinTeleportFarm then
+            local player = game.Players.LocalPlayer
+            local character = player.Character
+            
+            if character and character:FindFirstChild("HumanoidRootPart") then
+                local hrp = character.HumanoidRootPart
+                
+                for _, obj in ipairs(workspace:GetDescendants()) do
+                    if not _G.CoinTeleportFarm then break end
+                    
+                    if obj.Name == "Coin" and obj:IsA("BasePart") then
+                        -- Телепортируемся к монете
+                        hrp.CFrame = obj.CFrame + Vector3.new(0, 3, 0)
+                        task.wait(0.18) -- Безопасная задержка от кика
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- ========================================================
 -- ПУНКТ 9: СБОРКА ИНТЕРФЕЙСА RAYFIELD
 -- ========================================================
 
@@ -895,6 +923,13 @@ MainTab:CreateToggle({
    end,
 })
 
+MainTab:CreateToggle({
+   Name = "Телепортация по монетам / Coin Teleport Farm",
+   CurrentValue = _G.CoinTeleportFarm,
+   Callback = function(Value)
+       _G.CoinTeleportFarm = Value
+   end,
+})
 
 -- ==========================================
 -- ВКЛАДКА 2: ГРАФФИТИ / POSTERS
