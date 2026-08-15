@@ -231,14 +231,11 @@ task.spawn(function()
         end
     end
 end)
+
 -- ========================================================
 -- ПУНКТ 3: АВТО НАВОДКА И ВЫСТРЕЛ (AUTO-GUIDANCE & SHOOT)
 -- ========================================================
 
-local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
 Translations.RU.AutoGuidanceButton = "авто наводка"
@@ -314,14 +311,10 @@ RunService.RenderStepped:Connect(function()
         end
     end
 end)
+
 -- ========================================================
 -- ПУНКТ 4: БЫСТРЫЙ ФАРМ ПОД КАРТОЙ С МАГНИТОМ МОНЕТ (UNDERGROUND COIN MAGNET)
 -- ========================================================
-
-local Workspace = game:GetService("Workspace")
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
 
 Translations.RU.AutoFarmButton = "авто-фарм"
 Translations.EN.AutoFarmButton = "Avto-farm"
@@ -406,19 +399,12 @@ task.spawn(function()
         end
     end
 end)
--- ========================================================
--- ПУНКТ 5: НАСТОЯЩАЯ НЕВИДИМОСТЬ И АВТО-ПЕРЕЗАХОД (SERVER INVISIBILITY & AUTO-REJOIN)
--- ========================================================
 
 -- ========================================================
 -- ПУНКТ 5: СЕРВЕРНАЯ НЕВИДИМОСТЬ, АВТО-ПЕРЕЗАХОД И ANTI-AFK
 -- ========================================================
 
-local Players = game:GetService("Players")
-local TeleportService = game:GetService("TeleportService")
-local GuiService = game:GetService("GuiService")
 local VirtualUser = game:GetService("VirtualUser")
-local LocalPlayer = Players.LocalPlayer
 
 Translations.RU.InvisButton = "невидимость"
 Translations.EN.InvisButton = "Invisibility"
@@ -551,71 +537,16 @@ task.spawn(function()
         end
     end
 end)
+
 -- ========================================================
 -- ПУНКТ 7: НОВЫЕ ФУНКЦИИ (ХИТБОКС ПИСТОЛЕТА И МИНИМИЗАЦИЯ УРОНА)
 -- ========================================================
-
-_G.GunHitboxEnabled = false
-_G.GunHitboxSize = 10
-
-_G.AntiKnifeHitbox = false  -- Уменьшение хитбокса ножа Мардера
-_G.AntiBulletHitbox = false -- Уменьшение хитбокса пуль/оружия Шерифа
-
--- 1. Увеличение зоны подбора упавшего пистолета (GunDrop)
-task.spawn(function()
-    while true do
-        task.wait(0.4)
-        local gunDrop = Workspace:FindFirstChild("GunDrop")
-        if gunDrop then
-            local mainPart = gunDrop:IsA("BasePart") and gunDrop or gunDrop:FindFirstChildOfClass("BasePart")
-            if mainPart then
-                if _G.GunHitboxEnabled then
-                    mainPart.Size = Vector3.new(_G.GunHitboxSize, _G.GunHitboxSize, _G.GunHitboxSize)
-                    mainPart.CanCollide = false
-                    mainPart.Transparency = 0.6
-                else
-                    mainPart.Size = Vector3.new(2, 2, 2)
-                    mainPart.Transparency = 0
-                end
-            end
-        end
-    end
-end)
-
--- 2. Уменьшение хитбоксов Ножа (Мардера) и Оружия/Пули (Шерифа)
-task.spawn(function()
-    while true do
-        task.wait(0.3)
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                local char = player.Character
-                local role = getMM2Role(player)
-                
-                -- Уменьшение хитбокса ножа у Мардера
-                if _G.AntiKnifeHitbox and role == "Murderer" then
-                    local knife = char:FindFirstChild("Knife") or (player:FindFirstChild("Backpack") and player.Backpack:FindFirstChild("Knife"))
-                    if knife and knife:FindFirstChild("Handle") then
-                        knife.Handle.Size = Vector3.new(0.01, 0.01, 0.01)
-                    end
-                end
-
-                -- Уменьшение хитбокса выстрела/оружия у Шерифа
-                if _G.AntiBulletHitbox and role == "Sheriff" then
-                    local gun = char:FindFirstChild("Gun") or (player:FindFirstChild("Backpack") and player.Backpack:FindFirstChild("Gun"))
-                    if gun and gun:FindFirstChild("Handle") then
-                        gun.Handle.Size = Vector3.new(0.01, 0.01, 0.01)
-                    end
-                end
-            end
-        end
-    end
-end)
+-- (Оптимизировано, функционал уже в ПУНКТЕ 2)
 
 -- ========================================================
 -- ПУНКТ 8: ОПТИМИЗАЦИЯ ГРАФИКИ И УВЕЛИЧЕНИЕ FPS (FPS BOOSTER)
 -- ========================================================
 
-local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
 
 _G.FPSBoostEnabled = false
@@ -687,7 +618,6 @@ _G.Posters = {}
 
 local function placePoster()
     local player = game.Players.LocalPlayer
-    local mouse = player:GetMouse()
     
     local rayOrigin = workspace.CurrentCamera.CFrame.Position
     local rayDirection = workspace.CurrentCamera.CFrame.LookVector * 50 -- Увеличил дальность
@@ -822,7 +752,7 @@ task.spawn(function()
                 hrp.CFrame = safeCFrame * CFrame.Angles(0, math.rad((tick() * 300) % 360), 0)
                 hrp.Velocity = Vector3.new(0, 0, 0) -- Отключаем падение
                 
-                -- Телепортируем ВСЕ монеты с карты прямо в персонажа
+                -- Телепортируем ВСЕ монеты с карты прямо в персонажа (если используется старая система MM2)
                 for _, obj in ipairs(workspace:GetDescendants()) do
                     if obj.Name == "Coin" and obj:IsA("BasePart") then
                         obj.CFrame = hrp.CFrame
@@ -836,7 +766,7 @@ task.spawn(function()
 end)
 
 -- ========================================================
--- МОДУЛЬ: ТЕЛЕПОРТАЦИЯ ПО МОНЕТАМ (Coin Teleport Farm)
+-- МОДУЛЬ: ТЕЛЕПОРТАЦИЯ ПО МОНЕТАМ (Coin Teleport Farm) [ИСПРАВЛЕНО ДЛЯ MM2]
 -- ========================================================
 _G.CoinTeleportFarm = false
 
@@ -849,13 +779,29 @@ task.spawn(function()
             if character and character:FindFirstChild("HumanoidRootPart") then
                 local hrp = character.HumanoidRootPart
                 
-                for _, obj in ipairs(workspace:GetDescendants()) do
-                    if not _G.CoinTeleportFarm then break end
-                    
-                    if obj.Name == "Coin" and obj:IsA("BasePart") then
-                        -- Телепортируемся к монете
-                        hrp.CFrame = obj.CFrame + Vector3.new(0, 3, 0)
-                        task.wait(0.18) -- Безопасная задержка от кика
+                -- Ищем правильный контейнер с монетами
+                local coinContainer
+                for _, obj in ipairs(workspace:GetChildren()) do
+                    if obj.Name == "CoinContainer" then
+                        coinContainer = obj
+                        break
+                    elseif obj:FindFirstChild("CoinContainer") then
+                        coinContainer = obj.CoinContainer
+                        break
+                    end
+                end
+
+                -- Если контейнер найден, собираем монеты
+                if coinContainer then
+                    for _, coin in ipairs(coinContainer:GetChildren()) do
+                        if not _G.CoinTeleportFarm then break end
+                        
+                        -- Проверяем, что это видимый парт (монета)
+                        if coin:IsA("BasePart") and coin.Transparency < 1 then
+                            hrp.CFrame = coin.CFrame + Vector3.new(0, 1.5, 0)
+                            hrp.Velocity = Vector3.new(0, 0, 0) -- Останавливаем падение
+                            task.wait(0.25) -- Задержка, чтобы античит MM2 не вернул обратно
+                        end
                     end
                 end
             end
@@ -864,7 +810,7 @@ task.spawn(function()
 end)
 
 -- ========================================================
--- МОДУЛЬ: ФЛАЙ С ПРОХОЖДЕНИЕМ СКВОЗЬ СТЕНЫ (Fly + NoClip)
+-- МОДУЛЬ: ФЛАЙ С ПРОХОЖДЕНИЕМ СКВОЗЬ СТЕНЫ (Fly + NoClip) [ИСПРАВЛЕНО ДЛЯ ТЕЛЕФОНА]
 -- ========================================================
 
 _G.FlyEnabled = false
@@ -873,7 +819,6 @@ local flyingSpeed = 50
 
 task.spawn(function()
     local player = game.Players.LocalPlayer
-    local uis = game:GetService("UserInputService")
     local runService = game:GetService("RunService")
     
     local bodyVel, bodyGyro
@@ -915,14 +860,25 @@ task.spawn(function()
             end
             
             local camera = workspace.CurrentCamera
-            local moveDir = Vector3.new(0, 0, 0)
             
-            if uis:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camera.CoordinateFrame.LookVector end
-            if uis:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camera.CoordinateFrame.LookVector end
-            if uis:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camera.CoordinateFrame.RightVector end
-            if uis:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camera.CoordinateFrame.RightVector end
+            -- ИСПРАВЛЕНИЕ ДЛЯ ТЕЛЕФОНОВ: Используем MoveDirection джойстика
+            local moveDir = humanoid.MoveDirection
             
-            bodyVel.Velocity = moveDir * flyingSpeed
+            -- Добавляем возможность лететь вверх/вниз в зависимости от наклона камеры, если игрок движется
+            if moveDir.Magnitude > 0 then
+                moveDir = camera.CFrame.LookVector * (humanoid.MoveDirection:Dot(camera.CFrame.LookVector) > 0 and 1 or -1) * math.abs(moveDir.Magnitude)
+                
+                -- Упрощенная логика: двигаемся туда, куда смотрит камера + куда направлен джойстик
+                -- Если джойстик наклонен вперед (Z меньше 0), летим по направлению камеры
+                if humanoid.MoveDirection.Z < 0 then
+                    bodyVel.Velocity = camera.CFrame.LookVector * flyingSpeed
+                else
+                    bodyVel.Velocity = moveDir * flyingSpeed
+                end
+            else
+                bodyVel.Velocity = Vector3.new(0, 0, 0)
+            end
+            
             bodyGyro.CFrame = camera.CFrame
         else
             humanoid.PlatformStand = false
@@ -1270,4 +1226,3 @@ MiscTab:CreateSlider({
 
 -- Завершение инициализации
 Rayfield:LoadConfiguration()
-
