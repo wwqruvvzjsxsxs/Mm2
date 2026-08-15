@@ -1,5 +1,5 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - ТОЧНАЯ НАСТРОЙКА ФАРМА (ШАГ 0.2)
+-- MM2 ULTIMATE HUB - СТАТИЧНЫЙ ФАРМ (БЕЗ ДРОЖАНИЯ И ПАДЕНИЙ)
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -36,6 +36,8 @@ _G.AutoFarm = false
 _G.FarmMode = "OnMap"
 _G.FarmDelay = 0.5
 _G.FarmHeight = -3
+
+local originalGravity = Workspace.Gravity
 
 -- Определение роли
 local function getMM2Role(player)
@@ -513,52 +515,61 @@ local function deactivatePhantomMode()
 end
 
 -- ========================================================
--- СИСТЕМА АВТО ФАРМА
+-- СИСТЕМА АВТО ФАРМА (СТАТИЧНЫЙ РЕЖИМ)
 -- ========================================================
-local farmTween = nil
-local farmBodyVelocity = nil
+local farmVelocity = nil
 
-local function enableUnderMapPhysics()
+local function enableStaticPhysics()
     local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-    local hrp = char.HumanoidRootPart
+    if not char then return end
     
-    if not farmBodyVelocity or farmBodyVelocity.Parent ~= hrp then
-        if farmBodyVelocity then farmBodyVelocity:Destroy() end
-        farmBodyVelocity = Instance.new("BodyVelocity")
-        farmBodyVelocity.Name = "FarmAntiFall"
-        farmBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-        farmBodyVelocity.Velocity = Vector3.zero
-        farmBodyVelocity.Parent = hrp
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    
+    -- Выключаем гравитацию и анимации падения
+    Workspace.Gravity = 0
+    if hum then
+        hum.PlatformStand = true
+    end
+    
+    -- Выключаем коллизию всех частей
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+            part.AssemblyLinearVelocity = Vector3.zero
+            part.AssemblyAngularVelocity = Vector3.zero
+        end
+    end
+
+    -- Замораживаем физическое смещение тела
+    if root and not farmVelocity then
+        farmVelocity = Instance.new("BodyVelocity")
+        farmVelocity.Name = "StaticFarmVelocity"
+        farmVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        farmVelocity.Velocity = Vector3.zero
+        farmVelocity.Parent = root
     end
 end
 
 local function disableFarmPhysics()
-    if farmBodyVelocity then
-        farmBodyVelocity:Destroy()
-        farmBodyVelocity = nil
-    end
-    if farmTween then
-        farmTween:Cancel()
-        farmTween = nil
-    end
-end
-
-local function getUnderMapPosition(coinPos)
-    local raycastParams = RaycastParams.new()
-    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    Workspace.Gravity = originalGravity
     
-    local ignoreList = {}
-    if LocalPlayer.Character then table.insert(ignoreList, LocalPlayer.Character) end
-    for _, coin in ipairs(findAllCoins()) do table.insert(ignoreList, coin) end
-    raycastParams.FilterDescendantsInstances = ignoreList
-
-    local rayResult = Workspace:Raycast(coinPos, Vector3.new(0, -30, 0), raycastParams)
+    if farmVelocity then
+        farmVelocity:Destroy()
+        farmVelocity = nil
+    end
     
-    if rayResult then
-        return Vector3.new(coinPos.X, rayResult.Position.Y + _G.FarmHeight, coinPos.Z)
-    else
-        return Vector3.new(coinPos.X, coinPos.Y + _G.FarmHeight - 2, coinPos.Z)
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.PlatformStand = false
+        end
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = true
+            end
+        end
     end
 end
 
@@ -593,40 +604,32 @@ task.spawn(function()
             local hum = char and char:FindFirstChildOfClass("Humanoid")
             
             if root and hum and hum.Health > 0 then
+                enableStaticPhysics()
+                
                 local coin = getNearestCoin()
                 if coin then
                     expandCoinHitbox(coin)
                     
+                    -- Вычисляем позицию с учетом выбранного режима
+                    local targetPos
                     if _G.FarmMode == "UnderMap" then
-                        for _, part in ipairs(char:GetDescendants()) do
-                            if part:IsA("BasePart") then
-                                part.CanCollide = false
-                            end
-                        end
-                        
-                        enableUnderMapPhysics()
-                        
-                        local targetPos = getUnderMapPosition(coin.Position)
-                        local distance = (root.Position - targetPos).Magnitude
-                        local speed = 40 
-                        local tweenTime = math.clamp(distance / speed, 0.05, _G.FarmDelay)
-                        
-                        farmTween = TweenService:Create(root, TweenInfo.new(tweenTime, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
-                        farmTween:Play()
-                        farmTween.Completed:Wait()
-                        
-                        pcall(function()
-                            if firetouchinterest then
-                                firetouchinterest(root, coin, 0)
-                                firetouchinterest(root, coin, 1)
-                            end
-                        end)
+                        targetPos = Vector3.new(coin.Position.X, coin.Position.Y + _G.FarmHeight, coin.Position.Z)
                     else
-                        disableFarmPhysics()
-                        local targetY = coin.Position.Y + _G.FarmHeight
-                        root.CFrame = CFrame.new(coin.Position.X, targetY, coin.Position.Z)
-                        root.Velocity = Vector3.zero
+                        targetPos = Vector3.new(coin.Position.X, coin.Position.Y + 1.5, coin.Position.Z)
                     end
+                    
+                    -- Мгновенная статика без ускорений и физических качаний
+                    root.CFrame = CFrame.new(targetPos)
+                    root.AssemblyLinearVelocity = Vector3.zero
+                    root.AssemblyAngularVelocity = Vector3.zero
+                    
+                    -- Принудительно посылаем серверное касание
+                    pcall(function()
+                        if firetouchinterest then
+                            firetouchinterest(root, coin, 0)
+                            firetouchinterest(root, coin, 1)
+                        end
+                    end)
                 end
             end
         else
@@ -860,7 +863,7 @@ FarmTab:CreateToggle({
                 _G.AutoFarm = false
                 return
             end
-            notify("🪙 ФАРМ ВКЛЮЧЕН", "Собираю монеты...", 3)
+            notify("🪙 ФАРМ ВКЛЮЧЕН", "Собираю монеты в статике...", 3)
         else
             notify("🚫 ФАРМ ВЫКЛЮЧЕН", "Остановлен", 3)
             disableFarmPhysics()
@@ -935,4 +938,4 @@ MiscTab:CreateSlider({
     end,
 })
 
-notify("✅ СКРИПТ ЗАГРУЖЕН!", "Высота настроена с шагом 0.2", 5)
+notify("✅ СКРИПТ ЗАГРУЖЕН!", "Статичный фарм без падений активирован", 5)
