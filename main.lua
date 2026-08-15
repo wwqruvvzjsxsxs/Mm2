@@ -313,7 +313,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ========================================================
--- ПУНКТ 4: БЫСТРЫЙ ФАРМ ПОД КАРТОЙ С МАГНИТОМ МОНЕТ (UNDERGROUND COIN MAGNET)
+-- ПУНКТ 4: БЫСТРЫЙ ФАРМ ПОД КАРТОЙ С МАГНИТОМ МОНЕТ
 -- ========================================================
 
 Translations.RU.AutoFarmButton = "авто-фарм"
@@ -323,7 +323,7 @@ Translations.EN.SpeedLabel = "Player Speed"
 
 _G.AutoFarm = false
 _G.FarmSpeed = 20
-_G.CoinHitboxSize = 5 -- Размер хитбокса монеты для моментального сбора
+_G.CoinHitboxSize = 5 
 
 -- 1. Noclip (Отключение столкновений)
 RunService.Stepped:Connect(function()
@@ -379,7 +379,7 @@ end
 -- 4. Телепорт под картой + Магнит хитбокса монет
 task.spawn(function()
     while true do
-        task.wait(0.01) -- Максимально быстрый цикл сбора
+        task.wait(0.01) 
         if _G.AutoFarm then
             local char = LocalPlayer.Character
             local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -417,7 +417,7 @@ _G.AntiAFK = true
 
 local PinkColor = Color3.fromRGB(255, 105, 180)
 
--- 1. Anti-AFK (Защита от вылета за бездействие через 20 минут)
+-- 1. Anti-AFK 
 LocalPlayer.Idled:Connect(function()
     if _G.AntiAFK then
         VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
@@ -426,7 +426,7 @@ LocalPlayer.Idled:Connect(function()
     end
 end)
 
--- 2. Настоящая серверная невидимость (смещение визуальной модели под карту)
+-- 2. Настоящая серверная невидимость
 local function setInvisibility(state)
     _G.Invisibility = state
     local char = LocalPlayer.Character
@@ -438,7 +438,6 @@ local function setInvisibility(state)
     local highlight = char:FindFirstChild("Self_Invis_Highlight")
 
     if state then
-        -- Создаем розовый силуэт для собственного удобства
         if not highlight then
             highlight = Instance.new("Highlight")
             highlight.Name = "Self_Invis_Highlight"
@@ -450,14 +449,12 @@ local function setInvisibility(state)
             highlight.Parent = char
         end
 
-        -- Локальная прозрачность для себя
         for _, part in ipairs(char:GetDescendants()) do
             if (part:IsA("BasePart") or part:IsA("Decal")) and part.Name ~= "HumanoidRootPart" then
                 part.LocalTransparencyModifier = 0.7
             end
         end
 
-        -- Сдвигаем части тела под карту на 500 блоков для остальных
         task.spawn(function()
             while _G.Invisibility and char and char.Parent do
                 task.wait()
@@ -469,7 +466,6 @@ local function setInvisibility(state)
             end
         end)
     else
-        -- Сброс невидимости
         if highlight then
             highlight:Destroy()
         end
@@ -482,12 +478,11 @@ local function setInvisibility(state)
     end
 end
 
--- Автоматический сброс невидимости при перерождении
 LocalPlayer.CharacterAdded:Connect(function()
     _G.Invisibility = false
 end)
 
--- 3. Авто-перезаход на сервер при кике или вылете
+-- 3. Авто-перезаход
 GuiService.ErrorMessageChanged:Connect(function()
     if _G.AutoRejoin then
         task.wait(1)
@@ -523,7 +518,6 @@ task.spawn(function()
                 end
             end
         else
-            -- Сброс размеров хитбокса до стандартных значений
             for _, player in ipairs(Players:GetPlayers()) do
                 local char = player.Character
                 if char then
@@ -539,11 +533,6 @@ task.spawn(function()
 end)
 
 -- ========================================================
--- ПУНКТ 7: НОВЫЕ ФУНКЦИИ (ХИТБОКС ПИСТОЛЕТА И МИНИМИЗАЦИЯ УРОНА)
--- ========================================================
--- (Оптимизировано, функционал уже в ПУНКТЕ 2)
-
--- ========================================================
 -- ПУНКТ 8: ОПТИМИЗАЦИЯ ГРАФИКИ И УВЕЛИЧЕНИЕ FPS (FPS BOOSTER)
 -- ========================================================
 
@@ -552,7 +541,6 @@ local Lighting = game:GetService("Lighting")
 _G.FPSBoostEnabled = false
 
 local function applyFPSBoost()
-    -- 1. Отключение теней и тумана
     Lighting.GlobalShadows = false
     Lighting.FogEnd = 9e9
     
@@ -562,7 +550,6 @@ local function applyFPSBoost()
         end
     end
 
-    -- 2. Очистка текстур и материалов объектов на карте
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if _G.FPSBoostEnabled then
             if obj:IsA("BasePart") and not obj:IsA("MeshPart") then
@@ -576,7 +563,6 @@ local function applyFPSBoost()
     end
 end
 
--- Отслеживание включения функции
 task.spawn(function()
     while true do
         task.wait(1)
@@ -590,7 +576,7 @@ end)
 -- МОДУЛЬ: NAME SPOOFER (ФЕЙКОВЫЙ НИК)
 -- ========================================================
 
-_G.FakeName = "" -- Переменная для хранения ника
+_G.FakeName = "" 
 
 local function applyFakeName()
     local char = LocalPlayer.Character
@@ -601,9 +587,8 @@ local function applyFakeName()
     end
 end
 
--- Авто-применение при каждом возрождении
 LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(1) -- Ждем загрузки персонажа
+    task.wait(1) 
     applyFakeName()
 end)
 
@@ -612,15 +597,15 @@ end)
 -- ========================================================
 
 _G.PosterURL = ""
-_G.PosterWidth = 4  -- Дефолтная ширина
-_G.PosterHeight = 4 -- Дефолтная высота
+_G.PosterWidth = 4  
+_G.PosterHeight = 4 
 _G.Posters = {} 
 
 local function placePoster()
     local player = game.Players.LocalPlayer
     
     local rayOrigin = workspace.CurrentCamera.CFrame.Position
-    local rayDirection = workspace.CurrentCamera.CFrame.LookVector * 50 -- Увеличил дальность
+    local rayDirection = workspace.CurrentCamera.CFrame.LookVector * 50 
     
     local raycastParams = RaycastParams.new()
     raycastParams.FilterDescendantsInstances = {player.Character}
@@ -630,12 +615,10 @@ local function placePoster()
     
     if raycastResult and _G.PosterURL ~= "" then
         local posterPart = Instance.new("Part")
-        -- Используем глобальные переменные для размера
         posterPart.Size = Vector3.new(_G.PosterWidth, _G.PosterHeight, 0.1) 
         posterPart.Anchored = true
         posterPart.CanCollide = false
         posterPart.Transparency = 1 
-        -- Устанавливаем плакат перпендикулярно поверхности стены
         posterPart.CFrame = CFrame.new(raycastResult.Position + (raycastResult.Normal * 0.05), raycastResult.Position + raycastResult.Normal)
         posterPart.Parent = workspace
         
@@ -656,11 +639,9 @@ _G.SilentAim = false
 local player = game.Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
--- Функция поиска Мардера на сервере
 local function getMurderer()
     for _, p in pairs(game.Players:GetPlayers()) do
         if p ~= player and p.Character then
-            -- Проверяем наличие ножа у игрока (главный признак мардера)
             if p.Character:FindFirstChild("Knife") or (p.Backpack and p.Backpack:FindFirstChild("Knife")) then
                 return p.Character:FindFirstChild("HumanoidRootPart")
             end
@@ -669,7 +650,6 @@ local function getMurderer()
     return nil
 end
 
--- Перехват сетевых запросов (подмена выстрела)
 local mt = getrawmetatable(game)
 local backup = mt.__namecall
 setreadonly(mt, false)
@@ -678,11 +658,9 @@ mt.__namecall = newcclosure(function(self, ...)
     local args = {...}
     local name = getnamecallmethod()
     
-    -- Если функция пытается отправить выстрел на сервер и функция включена
     if _G.SilentAim and name == "FireServer" and args[1] == "Shoot" then
         local target = getMurderer()
         if target then
-            -- Подменяем координаты направления выстрела прямо на мардера сквозь стены
             args[2] = target.Position 
             return backup(self, unpack(args))
         end
@@ -743,16 +721,13 @@ task.spawn(function()
             if character and character:FindFirstChild("HumanoidRootPart") then
                 local hrp = character.HumanoidRootPart
                 
-                -- Запоминаем или создаем точку под картой (-50 студов вниз)
                 if not safeCFrame then
                     safeCFrame = hrp.CFrame * CFrame.new(0, -50, 0)
                 end
                 
-                -- Удерживаем персонажа под картой и слегка вращаем для сбора
                 hrp.CFrame = safeCFrame * CFrame.Angles(0, math.rad((tick() * 300) % 360), 0)
-                hrp.Velocity = Vector3.new(0, 0, 0) -- Отключаем падение
+                hrp.Velocity = Vector3.new(0, 0, 0) 
                 
-                -- Телепортируем ВСЕ монеты с карты прямо в персонажа (если используется старая система MM2)
                 for _, obj in ipairs(workspace:GetDescendants()) do
                     if obj.Name == "Coin" and obj:IsA("BasePart") then
                         obj.CFrame = hrp.CFrame
@@ -760,13 +735,13 @@ task.spawn(function()
                 end
             end
         else
-            safeCFrame = nil -- Сбрасываем точку при отключении
+            safeCFrame = nil 
         end
     end
 end)
 
 -- ========================================================
--- МОДУЛЬ: ТЕЛЕПОРТАЦИЯ ПО МОНЕТАМ (Coin Teleport Farm) [ИСПРАВЛЕНО ДЛЯ MM2]
+-- МОДУЛЬ: ТЕЛЕПОРТАЦИЯ ПО МОНЕТАМ (Coin Teleport Farm) 
 -- ========================================================
 _G.CoinTeleportFarm = false
 
@@ -779,7 +754,6 @@ task.spawn(function()
             if character and character:FindFirstChild("HumanoidRootPart") then
                 local hrp = character.HumanoidRootPart
                 
-                -- Ищем правильный контейнер с монетами
                 local coinContainer
                 for _, obj in ipairs(workspace:GetChildren()) do
                     if obj.Name == "CoinContainer" then
@@ -791,16 +765,14 @@ task.spawn(function()
                     end
                 end
 
-                -- Если контейнер найден, собираем монеты
                 if coinContainer then
                     for _, coin in ipairs(coinContainer:GetChildren()) do
                         if not _G.CoinTeleportFarm then break end
                         
-                        -- Проверяем, что это видимый парт (монета)
                         if coin:IsA("BasePart") and coin.Transparency < 1 then
                             hrp.CFrame = coin.CFrame + Vector3.new(0, 1.5, 0)
-                            hrp.Velocity = Vector3.new(0, 0, 0) -- Останавливаем падение
-                            task.wait(0.25) -- Задержка, чтобы античит MM2 не вернул обратно
+                            hrp.Velocity = Vector3.new(0, 0, 0) 
+                            task.wait(0.25) 
                         end
                     end
                 end
@@ -810,11 +782,11 @@ task.spawn(function()
 end)
 
 -- ========================================================
--- МОДУЛЬ: ФЛАЙ С ПРОХОЖДЕНИЕМ СКВОЗЬ СТЕНЫ (Fly + NoClip) [ИСПРАВЛЕНО ДЛЯ ТЕЛЕФОНА]
+-- МОДУЛЬ: ФЛАЙ С ПРОХОЖДЕНИЕМ СКВОЗЬ СТЕНЫ (Fly + NoClip) 
 -- ========================================================
 
 _G.FlyEnabled = false
-_G.FlyNoClip = false -- Переключатель для стен
+_G.FlyNoClip = false 
 local flyingSpeed = 50
 
 task.spawn(function()
@@ -834,7 +806,6 @@ task.spawn(function()
         local hrp = character.HumanoidRootPart
         local humanoid = character.Humanoid
         
-        -- Управление No-Clip (проход сквозь стены) во время полета
         if _G.FlyEnabled and _G.FlyNoClip then
             for _, part in ipairs(character:GetDescendants()) do
                 if part:IsA("BasePart") then
@@ -860,16 +831,11 @@ task.spawn(function()
             end
             
             local camera = workspace.CurrentCamera
-            
-            -- ИСПРАВЛЕНИЕ ДЛЯ ТЕЛЕФОНОВ: Используем MoveDirection джойстика
             local moveDir = humanoid.MoveDirection
             
-            -- Добавляем возможность лететь вверх/вниз в зависимости от наклона камеры, если игрок движется
             if moveDir.Magnitude > 0 then
                 moveDir = camera.CFrame.LookVector * (humanoid.MoveDirection:Dot(camera.CFrame.LookVector) > 0 and 1 or -1) * math.abs(moveDir.Magnitude)
                 
-                -- Упрощенная логика: двигаемся туда, куда смотрит камера + куда направлен джойстик
-                -- Если джойстик наклонен вперед (Z меньше 0), летим по направлению камеры
                 if humanoid.MoveDirection.Z < 0 then
                     bodyVel.Velocity = camera.CFrame.LookVector * flyingSpeed
                 else
@@ -886,6 +852,53 @@ task.spawn(function()
             if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
         end
     end)
+end)
+
+-- ========================================================
+-- МОДУЛЬ: КАСТОМНАЯ ТЕКСТУРА МОНЕТ (Custom Coin PNG) 
+-- ========================================================
+
+ _G.CustomCoinImage = ""
+
+local function applyCoinTexture(coin)
+    if _G.CustomCoinImage ~= "" then
+        coin.Transparency = 1 -- Прячем саму модель монеты
+        
+        local bgui = coin:FindFirstChild("CustomCoinGui")
+        if not bgui then
+            bgui = Instance.new("BillboardGui")
+            bgui.Name = "CustomCoinGui"
+            bgui.Size = UDim2.new(2, 0, 2, 0) -- Размер картинки поверх монеты
+            bgui.AlwaysOnTop = true
+            
+            local img = Instance.new("ImageLabel")
+            img.Name = "CoinImage"
+            img.Size = UDim2.new(1, 0, 1, 0)
+            img.BackgroundTransparency = 1
+            img.Image = _G.CustomCoinImage
+            img.Parent = bgui
+            
+            bgui.Parent = coin
+        else
+            bgui.CoinImage.Image = _G.CustomCoinImage
+        end
+    else
+        -- Возвращаем видимость оригинальной монете, если стерли текстуру
+        coin.Transparency = 0
+        if coin:FindFirstChild("CustomCoinGui") then
+            coin.CustomCoinGui:Destroy()
+        end
+    end
+end
+
+-- Автоматическое применение к новым появляющимся монетам
+workspace.DescendantAdded:Connect(function(descendant)
+    if descendant.Name == "Coin" and descendant:IsA("BasePart") then
+        task.wait(0.1) -- Задержка, чтобы игра успела полностью загрузить монету
+        if _G.CustomCoinImage ~= "" then
+            applyCoinTexture(descendant)
+        end
+    end
 end)
 
 -- ========================================================
@@ -1144,8 +1157,10 @@ MiscTab:CreateInput({
    RemoveTextAfterFocusLost = false,
    Callback = function(Text)
        _G.CustomCoinImage = Text
+       
+       -- Применяем ко всем уже существующим монетам на карте
        for _, coin in ipairs(workspace:GetDescendants()) do
-           if coin.Name == "Coin" and applyCoinTexture then
+           if coin.Name == "Coin" and coin:IsA("BasePart") then
                applyCoinTexture(coin)
            end
        end
@@ -1226,3 +1241,4 @@ MiscTab:CreateSlider({
 
 -- Завершение инициализации
 Rayfield:LoadConfiguration()
+
