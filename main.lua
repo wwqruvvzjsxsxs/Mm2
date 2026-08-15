@@ -34,6 +34,7 @@ _G.PhantomColor = Color3.fromRGB(255, 105, 180) -- Розовый цвет дл�
 _G.AutoFarm = false -- Авто фарм
 _G.FarmMode = "OnMap" -- Режим фарма: "OnMap" или "UnderMap"
 _G.FarmDelay = 0.5 -- Задержка между телепортациями
+_G.FarmHeight = 0 -- Высота относительно монеты (-10 = ниже карты, 0 = на уровне, 10 = выше)
 
 -- Определение роли
 local function getMM2Role(player)
@@ -542,7 +543,7 @@ local function deactivatePhantomMode()
 end
 
 -- ========================================================
--- СИСТЕМА АВТО ФАРМА (С АНТИ-ПАДЕНИЕМ)
+-- СИСТЕМА АВТО ФАРМА (УЛУЧШЕННАЯ)
 -- ========================================================
 local antiFallVelocity = nil
 
@@ -557,8 +558,8 @@ local function createAntiFall()
     end
     
     antiFallVelocity = Instance.new("BodyVelocity")
-    antiFallVelocity.MaxForce = Vector3.new(0, math.huge, 0) -- Только вертикальная сила
-    antiFallVelocity.Velocity = Vector3.new(0, 0, 0) -- Держим на месте
+    antiFallVelocity.MaxForce = Vector3.new(0, math.huge, 0)
+    antiFallVelocity.Velocity = Vector3.new(0, 0, 0)
     antiFallVelocity.Parent = hrp
 end
 
@@ -567,6 +568,78 @@ local function removeAntiFall()
         antiFallVelocity:Destroy()
         antiFallVelocity = nil
     end
+end
+
+-- Улучшенная функция поиска монет с учетом высоты
+local function getNearestCoinAtHeight()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    local root = char.HumanoidRootPart
+
+    local nearestCoin = nil
+    local minDistance = 999999
+
+    for _, coin in ipairs(findAllCoins()) do
+        -- Считаем расстояние с учетом высоты
+        local coinPos = coin.Position
+        local targetPos = Vector3.new(coinPos.X, coinPos.Y + _G.FarmHeight, coinPos.Z)
+        local dist = (root.Position - targetPos).Magnitude
+        
+        if dist < minDistance then
+            minDistance = dist
+            nearestCoin = coin
+        end
+    end
+    
+    return nearestCoin
+end
+
+-- Функция для увеличения хитбокса монеты
+local function expandCoinHitbox(coin)
+    pcall(function()
+        if coin:IsA("BasePart") then
+            -- Сохраняем оригинальный размер
+            if not coin:GetAttribute("OriginalSize") then
+                coin:SetAttribute("OriginalSize", coin.Size)
+            end
+            
+            -- Увеличиваем размер
+            local originalSize = coin:GetAttribute("OriginalSize")
+            local newSize = Vector3.new(
+                originalSize.X * 5,
+                originalSize.Y * 5,
+                originalSize.Z * 5
+            )
+            coin.Size = newSize
+            coin.CanCollide = false
+            coin.CanTouch = true
+            coin.CanQuery = true
+            
+            -- Пытаемся изменить прозрачность чтобы монета была невидимой но собираемой
+            coin.Transparency = 0.8
+            
+            -- Если есть MeshPart - тоже увеличиваем
+            if coin:IsA("MeshPart") then
+                coin.MeshScale = Vector3.new(5, 5, 5)
+            end
+        end
+    end)
+end
+
+-- Функция для поиска "пикселя" под картой
+local function findUndergroundPixel(coinPos)
+    -- Проверяем несколько позиций под монетой
+    local positions = {
+        Vector3.new(coinPos.X, coinPos.Y - 3, coinPos.Z),
+        Vector3.new(coinPos.X, coinPos.Y - 5, coinPos.Z),
+        Vector3.new(coinPos.X, coinPos.Y - 7, coinPos.Z),
+        Vector3.new(coinPos.X + 2, coinPos.Y - 5, coinPos.Z),
+        Vector3.new(coinPos.X - 2, coinPos.Y - 5, coinPos.Z),
+        Vector3.new(coinPos.X, coinPos.Y - 5, coinPos.Z + 2),
+        Vector3.new(coinPos.X, coinPos.Y - 5, coinPos.Z - 2),
+    }
+    
+    return positions
 end
 
 task.spawn(function()
@@ -593,36 +666,63 @@ task.spawn(function()
                     end
                 end
                 
-                local coin = getNearestCoin()
+                local coin = getNearestCoinAtHeight()
                 if coin then
-                    -- Пытаемся увеличить хитбокс монеты
-                    pcall(function()
-                        if coin:IsA("BasePart") then
-                            coin.Size = Vector3.new(coin.Size.X * 3, coin.Size.Y * 3, coin.Size.Z * 3)
-                            coin.CanCollide = false
-                        end
-                    end)
+                    -- Увеличиваем хитбокс монеты
+                    expandCoinHitbox(coin)
                     
                     if _G.FarmMode == "UnderMap" then
-                        -- Телепортируемся под карту
-                        root.CFrame = CFrame.new(coin.Position.X, coin.Position.Y - 5, coin.Position.Z)
+                        -- Ищем лучшую позицию под картой
+                        local positions = findUndergroundPixel(coin.Position)
+                        local bestPosition = nil
                         
-                        -- Создаем анти-падение
-                        createAntiFall()
+                        -- Пытаемся телепортироваться в разные позиции
+                        for _, pos in ipairs(positions) do
+                            root.CFrame = CFrame.new(pos)
+                            task.wait(0.05)
+                            
+                            -- Проверяем, не застряли ли мы в текстурах
+                            if root.Position.Y < coin.Position.Y and root.Position.Y > -100 then
+                                bestPosition = pos
+                                break
+                            end
+                        end
+                        
+                        if bestPosition then
+                            root.CFrame = CFrame.new(bestPosition)
+                            createAntiFall()
+                        else
+                            -- Если не нашли хорошую позицию, просто телепортируемся под монету
+                            root.CFrame = CFrame.new(coin.Position.X, coin.Position.Y + _G.FarmHeight, coin.Position.Z)
+                            createAntiFall()
+                        end
                     else
-                        -- Убираем анти-падение для режима "На карте"
+                        -- Режим "На карте"
                         removeAntiFall()
-                        
-                        -- Телепортируемся на карту, прямо к монете
-                        root.CFrame = CFrame.new(coin.Position.X, coin.Position.Y + 3, coin.Position.Z)
+                        root.CFrame = CFrame.new(coin.Position.X, coin.Position.Y + _G.FarmHeight, coin.Position.Z)
                     end
                     
                     -- Обнуляем скорость
                     root.Velocity = Vector3.new(0, 0, 0)
+                    
+                    -- Пытаемся принудительно собрать монету
+                    pcall(function()
+                        if coin:IsA("BasePart") then
+                            -- Симулируем прикосновение
+                            local touchPart = Instance.new("Part")
+                            touchPart.Size = Vector3.new(1, 1, 1)
+                            touchPart.Transparency = 1
+                            touchPart.CanCollide = false
+                            touchPart.Position = coin.Position
+                            touchPart.Parent = char
+                            
+                            task.wait(0.1)
+                            touchPart:Destroy()
+                        end
+                    end)
                 end
             end
         else
-            -- Если фарм выключен, убираем анти-падение
             if antiFallVelocity then
                 removeAntiFall()
             end
@@ -866,6 +966,18 @@ FarmTab:CreateSlider({
     CurrentValue = _G.FarmDelay,
     Callback = function(Value)
         _G.FarmDelay = Value
+    end,
+})
+
+FarmTab:CreateSlider({
+    Name = "Высота сбора монет",
+    Range = {-10, 10},
+    Increment = 1,
+    Suffix = " блоков",
+    CurrentValue = _G.FarmHeight,
+    Callback = function(Value)
+        _G.FarmHeight = Value
+        notify("📏 ВЫСОТА", "Высота сбора: " .. Value .. " блоков", 2)
     end,
 })
 
