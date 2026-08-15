@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 -- Уведомления
 local function notify(title, text, duration)
@@ -36,6 +37,8 @@ _G.AutoFarm = false -- Авто фарм
 _G.FarmMode = "OnMap" -- Режим фарма: "OnMap" или "UnderMap"
 _G.FarmDelay = 0.5 -- Задержка между телепортациями
 _G.FarmHeight = -3 -- По умолчанию под картой
+_G.HardAimEnabled = true -- Жесткий аимбот
+_G.AimTargetPart = "HumanoidRootPart" -- "Head" или "HumanoidRootPart"
 
 -- Определение роли
 local function getMM2Role(player)
@@ -721,6 +724,77 @@ local function killAll()
 end
 
 -- ========================================================
+-- ЖЕСТКИЙ АИМБОТ НА МАРДЕРА (ДЛЯ МОБИЛЬНЫХ)
+-- ========================================================
+local function getMurderer()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 and getMM2Role(player) == "Murderer" then
+                return player
+            end
+        end
+    end
+    return nil
+end
+
+-- Мгновенная наводка камеры и перехват луча
+local function snapAndShoot()
+    if not _G.HardAimEnabled then return end
+    
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    -- Проверяем, удерживает ли игрок пистолет
+    local gun = char:FindFirstChild("Gun") or char:FindFirstChild("Pistol")
+    if not gun then return end
+
+    local murderer = getMurderer()
+    if not murderer or not murderer.Character then return end
+
+    local targetPart = murderer.Character:FindFirstChild(_G.AimTargetPart) or murderer.Character:FindFirstChild("HumanoidRootPart")
+    if not targetPart then return end
+
+    -- Мгновенно поворачиваем камеру на Мардера
+    Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPart.Position)
+end
+
+-- Срабатывание при каждом тапе по экрану
+UserInputService.TouchTapInWorld:Connect(function()
+    snapAndShoot()
+end)
+
+-- Хук для 100% попадания пули в цель при выстреле
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+
+    if _G.HardAimEnabled and not checkcaller() then
+        local char = LocalPlayer.Character
+        if char and (char:FindFirstChild("Gun") or char:FindFirstChild("Pistol")) then
+            local murderer = getMurderer()
+            if murderer and murderer.Character then
+                local targetPart = murderer.Character:FindFirstChild(_G.AimTargetPart) or murderer.Character:FindFirstChild("HumanoidRootPart")
+                if targetPart then
+                    if method == "Raycast" and #args >= 2 then
+                        args[2] = (targetPart.Position - args[1]).Unit * 1000
+                        return oldNamecall(self, unpack(args))
+                    end
+                    if method == "FindPartOnWithIgnoreList" or method == "findPartOnWithIgnoreList" then
+                        if typeof(args[1]) == "Ray" then
+                            args[1] = Ray.new(args[1].Origin, (targetPart.Position - args[1].Origin).Unit * 1000)
+                            return oldNamecall(self, unpack(args))
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return oldNamecall(self, ...)
+end))
+
+-- ========================================================
 -- ИНТЕРФЕЙС
 -- ========================================================
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -754,6 +828,32 @@ CombatTab:CreateButton({
 
 CombatTab:CreateLabel("Убивает всех игроков на карте")
 CombatTab:CreateLabel("Работает только если вы Мардер")
+
+CombatTab:CreateSection("Аимбот")
+
+CombatTab:CreateToggle({
+    Name = "🎯 Жесткий аимбот на Мардера",
+    CurrentValue = _G.HardAimEnabled,
+    Callback = function(Value)
+        _G.HardAimEnabled = Value
+        if Value then
+            notify("🎯 АИМБОТ ВКЛЮЧЕН", "Автонаводка на Мардера активна!", 3)
+        else
+            notify("🚫 АИМБОТ ВЫКЛЮЧЕН", "Автонаводка отключена", 3)
+        end
+    end,
+})
+
+CombatTab:CreateDropdown({
+    Name = "Часть тела для аимбота",
+    Options = {"HumanoidRootPart", "Head"},
+    CurrentOption = {"HumanoidRootPart"},
+    MultipleOptions = false,
+    Callback = function(Option)
+        _G.AimTargetPart = Option[1]
+        notify("🎯 ЦЕЛЬ", "Аимбот целится в: " .. Option[1], 3)
+    end,
+})
 
 -- ========================================================
 -- ВКЛАДКА: ВИЗУАЛИЗАЦИЯ
