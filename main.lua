@@ -1,5 +1,5 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - МГНОВЕННЫЙ ФАРМ ИЗ-ПОД КАРТЫ (БЕЗ ГОЛОВЫ)
+-- MM2 ULTIMATE HUB - ИСПРАВЛЕННЫЙ АВТОФАРМ ПОД КАРТОЙ
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -21,7 +21,7 @@ local function notify(title, text, duration)
     end)
 end
 
--- Настройки (ВСЕ ФУНКЦИИ ВЫКЛЮЧЕНЫ ПРИ ЗАПУСКЕ)
+-- Настройки
 _G.ESPEnabled = false
 _G.InnocentColor = Color3.fromRGB(0, 255, 0)
 _G.MurdererColor = Color3.fromRGB(255, 0, 0)
@@ -34,8 +34,8 @@ _G.PhantomMode = false
 _G.PhantomColor = Color3.fromRGB(255, 105, 180)
 _G.AutoFarm = false
 _G.FarmMode = "OnMap"
-_G.FarmDelay = 0.3
-_G.FarmHeight = -2.5
+_G.FarmDelay = 0.2
+_G.FarmHeight = -5.5          -- Рекомендую от -5.0 до -7.0
 
 local originalGravity = Workspace.Gravity
 
@@ -53,26 +53,22 @@ local function getMM2Role(player)
     return "Innocent"
 end
 
--- Проверка: в игре ли мы
 local function isInGame()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     return hum and hum.Health > 0
 end
 
--- Проверка: начался ли раунд
 local function isRoundActive()
     if not isInGame() then return false end
-    
     for _, player in ipairs(Players:GetPlayers()) do
         if player.Character then
             local role = getMM2Role(player)
-            if role ~= "Innocent" then
+            if role \~= "Innocent" then
                 return true
             end
         end
     end
-    
     return false
 end
 
@@ -148,7 +144,7 @@ local function updatePlayerESP(player)
     end
 
     local hl = activeHighlights[player]
-    if not hl or hl.Parent ~= char then
+    if not hl or hl.Parent \~= char then
         removeHighlight(player)
         hl = Instance.new("Highlight")
         hl.Name = "MM2_ESP_Highlight"
@@ -401,7 +397,7 @@ local function findSheriffOrMurderer()
     local targets = {}
     
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
+        if player \~= LocalPlayer and player.Character then
             local hum = player.Character:FindFirstChildOfClass("Humanoid")
             local role = getMM2Role(player)
             
@@ -515,9 +511,10 @@ local function deactivatePhantomMode()
 end
 
 -- ========================================================
--- СИСТЕМА АВТО ФАРМА (СБОРА ИЗ-ПОД КАРТЫ)
+-- СИСТЕМА АВТО ФАРМА (ИСПРАВЛЕННАЯ)
 -- ========================================================
 local farmVelocity = nil
+local farmConnection = nil
 
 local function enableStaticPhysics()
     local char = LocalPlayer.Character
@@ -529,11 +526,14 @@ local function enableStaticPhysics()
     Workspace.Gravity = 0
     if hum then
         hum.PlatformStand = true
+        hum.AutoRotate = false
     end
     
     for _, part in ipairs(char:GetDescendants()) do
         if part:IsA("BasePart") then
             part.CanCollide = false
+            part.CanTouch = false
+            part.CanQuery = false
             part.AssemblyLinearVelocity = Vector3.zero
             part.AssemblyAngularVelocity = Vector3.zero
         end
@@ -561,95 +561,100 @@ local function disableFarmPhysics()
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum then
             hum.PlatformStand = false
+            hum.AutoRotate = true
         end
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = true
+                part.CanTouch = true
+                part.CanQuery = true
             end
         end
     end
 end
 
--- Дистанционный подбор через TouchInterest прямо из-под карты
-local function forceCollectCoin(coin)
+local function forceCollect(coin)
     local char = LocalPlayer.Character
-    if not char then return end
+    if not char or not coin then return end
+    
     local root = char:FindFirstChild("HumanoidRootPart")
-
+    local head = char:FindFirstChild("Head")
+    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+    
     pcall(function()
-        if firetouchinterest and root then
-            firetouchinterest(root, coin, 0)
-            task.wait(0.01)
-            firetouchinterest(root, coin, 1)
+        if firetouchinterest then
+            for i = 1, 18 do
+                if root then
+                    firetouchinterest(root, coin, 0)
+                    firetouchinterest(root, coin, 1)
+                end
+                if head then
+                    firetouchinterest(head, coin, 0)
+                    firetouchinterest(head, coin, 1)
+                end
+                if torso then
+                    firetouchinterest(torso, coin, 0)
+                    firetouchinterest(torso, coin, 1)
+                end
+                task.wait()
+            end
         end
     end)
 end
 
--- Плавный Tween для незаметного перемещения под полом
-local function tweenToCoin(targetCFrame, duration)
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-
-    local tweenInfo = TweenInfo.new(duration or 0.12, Enum.EasingStyle.Linear)
-    local tween = TweenService:Create(root, tweenInfo, {CFrame = targetCFrame})
-    tween:Play()
-    tween.Completed:Wait()
-end
-
--- ========================================================
--- АГРЕССИВНЫЙ ЦИКЛ ФАРМА (ДЛЯ DELTA)
--- ========================================================
+-- Основной цикл фарма
 task.spawn(function()
     while true do
         task.wait(_G.FarmDelay)
         
-        if _G.AutoFarm then
-            if not isInGame() then
-                _G.AutoFarm = false
-                disableFarmPhysics()
-                continue
-            end
-            
-            local char = LocalPlayer.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            local head = char and char:FindFirstChild("Head")
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            
-            if root and hum and hum.Health > 0 then
-                enableStaticPhysics()
-                
-                local coin = getNearestCoin()
-                if coin then
-                    local targetPos
-                    if _G.FarmMode == "UnderMap" then
-                        targetPos = coin.Position + Vector3.new(0, _G.FarmHeight, 0)
-                    else
-                        targetPos = coin.Position + Vector3.new(0, 1.5, 0)
-                    end
-                    
-                    -- Жесткий телепорт без всяких плавностей
-                    root.CFrame = CFrame.new(targetPos)
-                    root.AssemblyLinearVelocity = Vector3.zero
-                    root.AssemblyAngularVelocity = Vector3.zero
-                    
-                    -- Спам касаниями для пробития защиты сервера
-                    pcall(function()
-                        if firetouchinterest then
-                            -- Касание торсом
-                            firetouchinterest(root, coin, 0)
-                            firetouchinterest(root, coin, 1)
-                            -- Касание головой (сервер часто требует именно её)
-                            if head then
-                                firetouchinterest(head, coin, 0)
-                                firetouchinterest(head, coin, 1)
-                            end
-                        end
-                    end)
-                end
-            end
-        else
+        if not _G.AutoFarm then
             disableFarmPhysics()
+            continue
+        end
+        
+        if not isInGame() then
+            _G.AutoFarm = false
+            disableFarmPhysics()
+            continue
+        end
+        
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        
+        if not root or not hum or hum.Health <= 0 then
+            continue
+        end
+        
+        enableStaticPhysics()
+        
+        local coin = getNearestCoin()
+        if not coin then continue end
+        
+        if _G.FarmMode == "UnderMap" then
+            -- Под картой
+            local depth = _G.FarmHeight
+            if depth > -4 then
+                depth = -5.5
+            end
+            
+            local targetPos = coin.Position + Vector3.new(0, depth, 0)
+            
+            -- Ложимся + телепорт
+            root.CFrame = CFrame.new(targetPos) * CFrame.Angles(math.rad(-90), 0, 0)
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            
+            forceCollect(coin)
+            
+        else
+            -- На карте
+            local targetPos = coin.Position + Vector3.new(0, 1.6, 0)
+            root.CFrame = CFrame.new(targetPos)
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            
+            forceCollect(coin)
         end
     end
 end)
@@ -681,7 +686,7 @@ local function isPlayerInLobby(player)
 end
 
 local function killAll()
-    if getMM2Role(LocalPlayer) ~= "Murderer" then
+    if getMM2Role(LocalPlayer) \~= "Murderer" then
         notify("❌ ОШИБКА", "Вы не Мардер!", 3)
         return
     end
@@ -704,7 +709,7 @@ local function killAll()
         knife.Parent = myChar
     end
 
-    local knifeHandle = knife:FindFirstChild("Handle") or knife:FindFirstChildWithClass("BasePart")
+    local knifeHandle = knife:FindFirstChild("Handle") or knife:FindFirstChildWhichIsA("BasePart")
     if not knifeHandle then
         notify("❌ ОШИБКА", "Не найден Handle ножа!", 3)
         return
@@ -716,7 +721,7 @@ local function killAll()
     local myHrp = myChar:FindFirstChild("HumanoidRootPart")
 
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
+        if player \~= LocalPlayer and player.Character then
             local targetChar = player.Character
             local hum = targetChar:FindFirstChildOfClass("Humanoid")
             local targetHrp = targetChar:FindFirstChild("HumanoidRootPart")
@@ -879,7 +884,7 @@ FarmTab:CreateToggle({
                 _G.AutoFarm = false
                 return
             end
-            notify("🪙 ФАРМ ВКЛЮЧЕН", "Собираю монеты...", 3)
+            notify("🪙 ФАРМ ВКЛЮЧЕН", "Режим: " .. (_G.FarmMode == "UnderMap" and "Под картой" or "На карте"), 3)
         else
             notify("🚫 ФАРМ ВЫКЛЮЧЕН", "Остановлен", 3)
             disableFarmPhysics()
@@ -896,7 +901,6 @@ FarmTab:CreateDropdown({
         local choice = type(Option) == "table" and Option[1] or Option
         if choice == "На карте" then
             _G.FarmMode = "OnMap"
-            disableFarmPhysics()
         else
             _G.FarmMode = "UnderMap"
         end
@@ -906,8 +910,8 @@ FarmTab:CreateDropdown({
 
 FarmTab:CreateSlider({
     Name = "Скорость сборки монет",
-    Range = {0.1, 2},
-    Increment = 0.1,
+    Range = {0.08, 1.5},
+    Increment = 0.05,
     Suffix = "сек",
     CurrentValue = _G.FarmDelay,
     Callback = function(Value)
@@ -916,14 +920,14 @@ FarmTab:CreateSlider({
 })
 
 FarmTab:CreateSlider({
-    Name = "Высота сбора монет",
-    Range = {-15, 15},
+    Name = "Высота сбора (Под картой)",
+    Range = {-9, -3},
     Increment = 0.2,
     Suffix = " блоков",
-    CurrentValue = -2.5,
+    CurrentValue = _G.FarmHeight,
     Callback = function(Value)
         _G.FarmHeight = Value
-        notify("📏 ВЫСОТА", "Высота настроена: " .. Value .. " блоков", 2)
+        notify("📏 ВЫСОТА", "Глубина: " .. Value, 2)
     end,
 })
 
@@ -955,4 +959,4 @@ MiscTab:CreateSlider({
     end,
 })
 
-notify("✅ СКРИПТ ОБНОВЛЕН!", "Подпольный фарм исправлен и оптимизирован", 5)
+notify("✅ СКРИПТ ЗАГРУЖЕН", "Автофарм под картой исправлен", 5)
