@@ -1,5 +1,5 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - С СУПЕР-МАГНИТОМ И АВТОСМЕРТЬЮ
+-- MM2 ULTIMATE HUB - ФИНАЛЬНАЯ ВЕРСИЯ С АВТОЦИКЛОМ
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -52,16 +52,11 @@ _G.FlySpeed = 50
 _G.WallHack = false
 _G.SelectedPlayer = nil
 _G.AutoKillMurderer = false
-_G.SmartMagnet = false
-_G.MagnetRadius = 200
-_G.MagnetStrength = 50
-_G.RotationSpeed = 2
-_G.AutoDeath = false  -- Автосмерть при переполнении
-_G.MaxCoins = 40  -- Максимум монет
+_G.AutoDeath = false  -- Главный переключатель автосмерти
+_G.MaxCoins = 40  -- Сколько монет собрать
 
 local MurdererColor = Color3.fromRGB(255, 0, 0)
 local SheriffColor = Color3.fromRGB(0, 0, 255)
-local lastMagnetCount = nil
 
 -- ========================================================
 -- ФУНКЦИЯ ОПРЕДЕЛЕНИЯ РОЛИ
@@ -115,174 +110,95 @@ local function getNearestCoin()
 end
 
 -- ========================================================
--- СУПЕР-МАГНИТ МОНЕТ
+-- АВТОСМЕРТЬ С ПОЛНЫМ АВТОМАТИЧЕСКИМ ЦИКЛОМ
 -- ========================================================
-local smartMagnetLoop = nil
+local autoDeathLoop = nil
+local waitingForRespawn = false
+local farmWasOnBeforeDeath = false
 
-local function findMapCenter()
-    local coins = findAllCoins()
-    if #coins == 0 then return Vector3.new(0, -10, 0) end
-    
-    local totalX = 0
-    local totalZ = 0
-    
-    for _, coin in ipairs(coins) do
-        totalX = totalX + coin.Position.X
-        totalZ = totalZ + coin.Position.Z
-    end
-    
-    local centerX = totalX / #coins
-    local centerZ = totalZ / #coins
-    
-    return Vector3.new(centerX, -10, centerZ)
+local function countCoinsOnMap()
+    return #findAllCoins()
 end
 
-local function enableSmartMagnet()
+local function killSelf()
     local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not char then return false end
+    
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    
+    notify("💀 СМЕРТЬ", "Собрано " .. _G.MaxCoins .. " монет! Умираю...", 3)
+    
+    _G.AutoFarm = false
+    hum.Health = 0
+    
+    return true
+end
+
+-- Функция запуска цикла автосмерти
+local function startAutoDeathCycle()
+    if not _G.AutoDeath then return end
+    
+    local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     
-    if not hrp or not hum or hum.Health <= 0 then
-        notify("❌ ОШИБКА", "Вы должны быть в игре и живы!", 3)
-        _G.SmartMagnet = false
+    if not hum or hum.Health <= 0 then
+        -- Мы мертвы, ждем возрождения
+        if not waitingForRespawn then
+            waitingForRespawn = true
+            notify("⏳ ОЖИДАНИЕ", "Жду новый раунд для продолжения фарма...", 5)
+        end
         return
     end
     
-    local center = findMapCenter()
-    
-    notify("🧲 СУПЕР-МАГНИТ ВКЛЮЧЕН", "Телепортирую под карту и собираю монеты!", 5)
-    
-    hrp.CFrame = CFrame.new(center)
-    
-    -- Включаем NoClip
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = false
-        end
+    -- Мы живы, продолжаем фарм
+    if waitingForRespawn then
+        waitingForRespawn = false
+        notify("✅ ВОЗРОЖДЕНИЕ", "Новый раунд! Продолжаю фарм...", 3)
     end
     
-    smartMagnetLoop = task.spawn(function()
-        while _G.SmartMagnet and char and char.Parent do
-            task.wait(0.05)
-            
-            local currentHrp = char:FindFirstChild("HumanoidRootPart")
-            local currentHum = char:FindFirstChildOfClass("Humanoid")
-            
-            if not currentHrp or not currentHum or currentHum.Health <= 0 then
-                break
-            end
-            
-            -- Удерживаем позицию
-            currentHrp.Velocity = Vector3.new(0, 0, 0)
-            
-            -- Вращаемся
-            local rotationAngle = tick() * _G.RotationSpeed
-            currentHrp.CFrame = CFrame.new(center) * CFrame.Angles(0, rotationAngle, 0)
-            
-            -- Притягиваем монеты
-            local coins = findAllCoins()
-            local collectedCount = 0
-            
-            for _, coin in ipairs(coins) do
-                if coin and coin.Parent then
-                    local distance = (currentHrp.Position - coin.Position).Magnitude
-                    
-                    if distance < _G.MagnetRadius then
-                        collectedCount = collectedCount + 1
-                        
-                        pcall(function()
-                            coin.Anchored = false
-                            coin.CanCollide = false
-                            
-                            local direction = (currentHrp.Position - coin.Position).Unit
-                            local strength = _G.MagnetStrength * (1 - distance / _G.MagnetRadius) * 2
-                            
-                            coin.Position = coin.Position + direction * strength
-                            coin.Velocity = direction * strength * 10
-                            
-                            if distance < 5 then
-                                coin.Position = currentHrp.Position + Vector3.new(0, 3, 0)
-                                coin.Anchored = true
-                            end
-                        end)
-                    end
-                end
-            end
-            
-            if collectedCount > 0 then
-                if not lastMagnetCount or (tick() - lastMagnetCount) > 10 then
-                    notify("🧲 СБОР МОНЕТ", "Притянуто монет: " .. collectedCount, 2)
-                    lastMagnetCount = tick()
-                end
-            end
-        end
-    end)
+    -- Включаем фарм если нужно
+    if not _G.AutoFarm then
+        _G.AutoFarm = true
+        notify("🪙 ФАРМ ВКЛЮЧЕН", "Собираю монеты...", 3)
+    end
+    
+    -- Проверяем количество монет
+    local coinsOnMap = countCoinsOnMap()
+    local collectedCoins = _G.MaxCoins - coinsOnMap
+    
+    if collectedCoins < 0 then
+        collectedCoins = 0
+    end
+    
+    -- Если собрали достаточно монет - умираем
+    if collectedCoins >= _G.MaxCoins then
+        killSelf()
+    end
 end
 
-local function disableSmartMagnet()
-    _G.SmartMagnet = false
-    
-    if smartMagnetLoop then
-        task.cancel(smartMagnetLoop)
-        smartMagnetLoop = nil
-    end
-    
-    local char = LocalPlayer.Character
-    if char then
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        
-        if hrp and hum then
-            hrp.CFrame = CFrame.new(hrp.Position.X, 10, hrp.Position.Z)
-            
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = true
-                end
-            end
-        end
-    end
-    
-    notify("🧲 МАГНИТ ВЫКЛЮЧЕН", "Возвращаю на карту!", 3)
-end
-
--- ========================================================
--- АВТОСМЕРТЬ ПРИ ПЕРЕПОЛНЕНИИ МОНЕТ
--- ========================================================
+-- Основной цикл
 task.spawn(function()
     while true do
-        task.wait(1)  -- Проверка каждую секунду
+        task.wait(1)
         if _G.AutoDeath then
-            local char = LocalPlayer.Character
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            
-            if hum and hum.Health > 0 then
-                -- Проверяем количество монет
-                local coinCount = #findAllCoins()
-                
-                -- Если монет мало (значит мы собрали много)
-                if coinCount < 10 then
-                    notify("💀 АВТОСМЕРТЬ", "Монеты собраны! Умираю и возвращаюсь в лобби...", 3)
-                    
-                    -- Убиваем себя
-                    hum.Health = 0
-                    
-                    -- Отключаем фарм и магнит
-                    _G.AutoFarm = false
-                    _G.SmartMagnet = false
-                    if smartMagnetLoop then
-                        task.cancel(smartMagnetLoop)
-                        smartMagnetLoop = nil
-                    end
-                    
-                    -- Ждем возрождения
-                    task.wait(2)
-                    
-                    notify("✅ В ЛОББИ", "Монеты сохранены! Следующий заход...", 3)
-                end
-            end
+            startAutoDeathCycle()
         end
     end
+end)
+
+-- Обработка смерти персонажа
+LocalPlayer.CharacterAdded:Connect(function(character)
+    local humanoid = character:WaitForChild("Humanoid")
+    
+    humanoid.Died:Connect(function()
+        notify("💀 ВЫ ПОГИБЛИ", "Ожидание следующего раунда...", 5)
+        
+        -- Если автосмерть включена - ждем новый раунд
+        if _G.AutoDeath then
+            waitingForRespawn = true
+        end
+    end)
 end)
 
 -- ========================================================
@@ -326,16 +242,6 @@ task.spawn(function()
             end
         end
     end
-end)
-
-LocalPlayer.CharacterAdded:Connect(function(character)
-    local humanoid = character:WaitForChild("Humanoid")
-    humanoid.Died:Connect(function()
-        if _G.SmartMagnet then
-            disableSmartMagnet()
-        end
-        notify("💀 ВЫ ПОГИБЛИ", "Не расстраивайтесь! В следующем раунде повезет!", 5)
-    end)
 end)
 
 -- ========================================================
@@ -436,7 +342,7 @@ end)
 task.spawn(function()
     while true do
         task.wait(_G.FarmTeleportDelay)
-        if _G.AutoFarm and not _G.SmartMagnet then  -- Не конфликтует с магнитом
+        if _G.AutoFarm then
             local char = LocalPlayer.Character
             local root = char and char:FindFirstChild("HumanoidRootPart")
             local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -847,7 +753,7 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Window = Rayfield:CreateWindow({
     Name = "MM2 Ultimate Hub",
     LoadingTitle = "MM2 Script",
-    LoadingSubtitle = "Ultimate Version",
+    LoadingSubtitle = "Auto Cycle Version",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -943,55 +849,15 @@ FarmTab:CreateToggle({
 })
 
 FarmTab:CreateToggle({
-    Name = "🧲 Супер-магнит монет",
-    CurrentValue = _G.SmartMagnet,
-    Callback = function(Value)
-        if Value then
-            enableSmartMagnet()
-        else
-            disableSmartMagnet()
-        end
-    end,
-})
-
-FarmTab:CreateToggle({
-    Name = "💀 Автосмерть при сборе",
+    Name = "💀 АВТО-ЦИКЛ (Фарм+Смерть+Возрождение)",
     CurrentValue = _G.AutoDeath,
     Callback = function(Value)
         _G.AutoDeath = Value
         if Value then
-            notify("💀 АВТОСМЕРТЬ ВКЛЮЧЕНА", "Умру автоматически после сбора монет!", 3)
+            notify("💀 АВТО-ЦИКЛ ВКЛЮЧЕН", "Буду фармить, умирать и возрождаться автоматически!", 5)
+        else
+            notify("🛑 АВТО-ЦИКЛ ВЫКЛЮЧЕН", "Цикл остановлен", 3)
         end
-    end,
-})
-
-FarmTab:CreateSlider({
-    Name = "Радиус магнита",
-    Range = {50, 500},
-    Increment = 10,
-    CurrentValue = _G.MagnetRadius,
-    Callback = function(Value)
-        _G.MagnetRadius = Value
-    end,
-})
-
-FarmTab:CreateSlider({
-    Name = "Сила притяжения",
-    Range = {10, 100},
-    Increment = 5,
-    CurrentValue = _G.MagnetStrength,
-    Callback = function(Value)
-        _G.MagnetStrength = Value
-    end,
-})
-
-FarmTab:CreateSlider({
-    Name = "Скорость вращения",
-    Range = {1, 10},
-    Increment = 1,
-    CurrentValue = _G.RotationSpeed,
-    Callback = function(Value)
-        _G.RotationSpeed = Value
     end,
 })
 
@@ -1016,6 +882,16 @@ FarmTab:CreateSlider({
     CurrentValue = _G.FarmSpeed,
     Callback = function(Value)
         _G.FarmSpeed = Value
+    end,
+})
+
+FarmTab:CreateSlider({
+    Name = "Размер хитбокса монет",
+    Range = {3, 20},
+    Increment = 1,
+    CurrentValue = _G.CoinHitboxSize,
+    Callback = function(Value)
+        _G.CoinHitboxSize = Value
     end,
 })
 
