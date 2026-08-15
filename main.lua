@@ -35,7 +35,7 @@ _G.PhantomColor = Color3.fromRGB(255, 105, 180)
 _G.AutoFarm = false
 _G.FarmMode = "OnMap"
 _G.FarmDelay = 0.3
-_G.FarmHeight = -2.5  -- ИЗМЕНЕНО: было -4.5, теперь -2.5
+_G.FarmHeight = -2.5
 
 local originalGravity = Workspace.Gravity
 
@@ -515,7 +515,7 @@ local function deactivatePhantomMode()
 end
 
 -- ========================================================
--- СИСТЕМА АВТО ФАРМА (ИСПРАВЛЕННАЯ СБОРКА ИЗ-ПОД КАРТЫ)
+-- СИСТЕМА АВТО ФАРМА (СБОРА ИЗ-ПОД КАРТЫ)
 -- ========================================================
 local farmVelocity = nil
 
@@ -570,37 +570,34 @@ local function disableFarmPhysics()
     end
 end
 
--- Мульти-эмуляция касания всеми частями тела для 100% сработки сервера
+-- Дистанционный подбор через TouchInterest прямо из-под карты
 local function forceCollectCoin(coin)
     local char = LocalPlayer.Character
     if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
 
     pcall(function()
-        if firetouchinterest then
-            for _, part in ipairs(char:GetChildren()) do
-                if part:IsA("BasePart") then
-                    firetouchinterest(part, coin, 0)
-                    task.wait()
-                    firetouchinterest(part, coin, 1)
-                end
-            end
+        if firetouchinterest and root then
+            firetouchinterest(root, coin, 0)
+            task.wait(0.01)
+            firetouchinterest(root, coin, 1)
         end
     end)
 end
 
--- НОВАЯ ФУНКЦИЯ: Плавное перемещение через Tween
+-- Плавный Tween для незаметного перемещения под полом
 local function tweenToCoin(targetCFrame, duration)
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return end
 
-    local tweenInfo = TweenInfo.new(duration or 0.15, Enum.EasingStyle.Linear)
+    local tweenInfo = TweenInfo.new(duration or 0.12, Enum.EasingStyle.Linear)
     local tween = TweenService:Create(root, tweenInfo, {CFrame = targetCFrame})
     tween:Play()
     tween.Completed:Wait()
 end
 
--- ИЗМЕНЕННЫЙ БЛОК ФАРМА С TWEEN И УМЕНЬШЕННОЙ ГЛУБИНОЙ
+-- Цикл фарминга
 task.spawn(function()
     while true do
         task.wait(_G.FarmDelay)
@@ -623,13 +620,12 @@ task.spawn(function()
                 if coin then
                     local targetPos
                     if _G.FarmMode == "UnderMap" then
-                        -- Минимальный сдвиг под пол (-2.5 вместо -4.5)
-                        targetPos = coin.Position + Vector3.new(0, -2.5, 0)
+                        -- Смещение строго на глубину _G.FarmHeight (персонаж полностью под картой)
+                        targetPos = coin.Position + Vector3.new(0, _G.FarmHeight, 0)
                     else
                         targetPos = coin.Position + Vector3.new(0, 1.5, 0)
                     end
                     
-                    -- Плавное смещение через Tween вместо резкого CFrame
                     tweenToCoin(CFrame.new(targetPos), 0.12)
                     
                     root.AssemblyLinearVelocity = Vector3.zero
@@ -740,11 +736,9 @@ local function killAll()
 end
 
 -- ========================================================
--- ИНТЕРФЕЙС
+-- ИНТЕРФЕЙС RAYFIELD
 -- ========================================================
-local Rayfield = loadstring(game:GetHttp
-
-('https://sirius.menu/rayfield'))()
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
     Name = "MM2 Ultimate Hub",
@@ -885,13 +879,14 @@ FarmTab:CreateDropdown({
     CurrentOption = {"На карте"},
     MultipleOptions = false,
     Callback = function(Option)
-        if Option[1] == "На карте" then
+        local choice = type(Option) == "table" and Option[1] or Option
+        if choice == "На карте" then
             _G.FarmMode = "OnMap"
             disableFarmPhysics()
         else
             _G.FarmMode = "UnderMap"
         end
-        notify("🔄 РЕЖИМ ФАРМА", "Выбран: " .. Option[1], 3)
+        notify("🔄 РЕЖИМ ФАРМА", "Выбран: " .. choice, 3)
     end,
 })
 
@@ -911,7 +906,7 @@ FarmTab:CreateSlider({
     Range = {-15, 15},
     Increment = 0.2,
     Suffix = " блоков",
-    CurrentValue = -2.5,  -- ИЗМЕНЕНО: было -4.5
+    CurrentValue = -2.5,
     Callback = function(Value)
         _G.FarmHeight = Value
         notify("📏 ВЫСОТА", "Высота настроена: " .. Value .. " блоков", 2)
@@ -947,3 +942,4 @@ MiscTab:CreateSlider({
 })
 
 notify("✅ СКРИПТ ОБНОВЛЕН!", "Подпольный фарм исправлен и оптимизирован", 5)
+
