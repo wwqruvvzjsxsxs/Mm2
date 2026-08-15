@@ -1,5 +1,5 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - ВЕРСИЯ С THUNDER HUB ФАРМОМ
+-- MM2 ULTIMATE HUB - ВЕРСИЯ С THUNDER HUB ФАРМОМ (ИСПРАВЛЕНО)
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -7,6 +7,7 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 -- Уведомления
 local function notify(title, text, duration)
@@ -34,7 +35,7 @@ _G.PhantomColor = Color3.fromRGB(255, 105, 180)
 _G.AutoFarm = false
 _G.FarmMode = "OnMap"
 _G.FarmDelay = 0.2
-_G.FarmHeight = -5.5
+_G.FarmHeight = -2.5  -- ИЗМЕНЕНО: оптимальная глубина для подпольного фарма
 
 local originalGravity = Workspace.Gravity
 
@@ -63,7 +64,6 @@ local function isRoundActive()
     for _, player in ipairs(Players:GetPlayers()) do
         if player.Character then
             local role = getMM2Role(player)
-            -- ИСПРАВЛЕНО: Убран слеш перед тильдой
             if role ~= "Innocent" then
                 return true
             end
@@ -134,7 +134,6 @@ local function updatePlayerESP(player)
     end
 
     local hl = activeHighlights[player]
-    -- ИСПРАВЛЕНО: Убран слеш перед тильдой
     if not hl or hl.Parent ~= char then
         removeHighlight(player)
         hl = Instance.new("Highlight")
@@ -345,7 +344,6 @@ local selfHighlight = nil
 local function findSheriffOrMurderer()
     local targets = {}
     for _, player in ipairs(Players:GetPlayers()) do
-        -- ИСПРАВЛЕНО: Убран слеш перед тильдой
         if player ~= LocalPlayer and player.Character then
             local hum = player.Character:FindFirstChildOfClass("Humanoid")
             local role = getMM2Role(player)
@@ -452,176 +450,206 @@ local function deactivatePhantomMode()
 end
 
 -- ========================================================
--- АВТОФАРМ (МЕТОД THUNDER HUB + ПОДДЕРЖКА ПОД КАРТОЙ)
+-- АВТОФАРМ (ПОЛНОСТЬЮ РАБОЧИЙ МЕТОД THUNDER HUB)
 -- ========================================================
 
 local isFarming = false
 local farmPlatform = nil
-local moveSpeed = 25 -- скорость движения (рекомендую 22-28)
+local farmConnection = nil
+local currentTween = nil
+local moveSpeed = 30
 
--- Точный поиск монет (как в Thunder Hub)
+-- Точный поиск монет по структуре MM2
 local function findClosestCoin()
-	local closestDist = math.huge
-	local closestCoin = nil
-	local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-	if not root then return nil end
+    local closestDist = math.huge
+    local closestCoin = nil
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
 
-	for _, model in ipairs(Workspace:GetChildren()) do
-		if model:IsA("Model") and model:FindFirstChild("CoinContainer") then
-			for _, coin in ipairs(model.CoinContainer:GetChildren()) do
-				if coin:IsA("BasePart") 
-					and coin:FindFirstChild("TouchInterest") 
-					and coin.Name == "Coin_Server" 
-					and coin.Transparency < 0.9 then
+    -- Ищем все CoinContainer в Workspace
+    for _, model in ipairs(Workspace:GetDescendants()) do
+        if model:IsA("Folder") and model.Name == "CoinContainer" then
+            for _, coin in ipairs(model:GetChildren()) do
+                if coin:IsA("BasePart") 
+                    and coin:FindFirstChild("TouchInterest") 
+                    and coin.Name == "Coin_Server" 
+                    and coin.Transparency < 0.9 then
 
-					local dist = (root.Position - coin.Position).Magnitude
-					if dist < closestDist then
-						closestDist = dist
-						closestCoin = coin
-					end
-				end
-			end
-		end
-	end
-	return closestCoin
+                    local dist = (root.Position - coin.Position).Magnitude
+                    if dist < closestDist then
+                        closestDist = dist
+                        closestCoin = coin
+                    end
+                end
+            end
+        end
+    end
+    
+    return closestCoin
 end
 
 local function createFarmPlatform(root)
-	if farmPlatform then
-		farmPlatform:Destroy()
-	end
-	farmPlatform = Instance.new("Part")
-	farmPlatform.Size = Vector3.new(6, 1, 6)
-	farmPlatform.Anchored = true
-	farmPlatform.CanCollide = false
-	farmPlatform.Transparency = 1
-	farmPlatform.Position = root.Position + Vector3.new(0, -3, 0)
-	farmPlatform.Parent = Workspace
+    if farmPlatform then
+        farmPlatform:Destroy()
+    end
+    farmPlatform = Instance.new("Part")
+    farmPlatform.Name = "FarmPlatform"
+    farmPlatform.Size = Vector3.new(8, 1, 8)
+    farmPlatform.Anchored = true
+    farmPlatform.CanCollide = false
+    farmPlatform.Transparency = 1
+    farmPlatform.Position = root.Position + Vector3.new(0, -3, 0)
+    farmPlatform.Parent = Workspace
 end
 
 local function destroyFarmPlatform()
-	if farmPlatform then
-		farmPlatform:Destroy()
-		farmPlatform = nil
-	end
+    if farmPlatform then
+        farmPlatform:Destroy()
+        farmPlatform = nil
+    end
 end
 
 local function enableFarmPhysics()
-	local char = LocalPlayer.Character
-	if not char then return end
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	local root = char:FindFirstChild("HumanoidRootPart")
-	if not hum or not root then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not hum or not root then return end
 
-	Workspace.Gravity = 0
-	hum.PlatformStand = true
-	hum.AutoRotate = false
+    Workspace.Gravity = 0
+    hum.PlatformStand = true
+    hum.AutoRotate = false
 
-	for _, part in ipairs(char:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.CanCollide = false
-			part.AssemblyLinearVelocity = Vector3.zero
-			part.AssemblyAngularVelocity = Vector3.zero
-		end
-	end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+            part.AssemblyLinearVelocity = Vector3.zero
+            part.AssemblyAngularVelocity = Vector3.zero
+        end
+    end
 
-	createFarmPlatform(root)
+    createFarmPlatform(root)
 end
 
 local function disableFarmPhysics()
-	Workspace.Gravity = originalGravity
-	destroyFarmPlatform()
+    Workspace.Gravity = originalGravity
+    destroyFarmPlatform()
 
-	local char = LocalPlayer.Character
-	if char then
-		local hum = char:FindFirstChildOfClass("Humanoid")
-		if hum then
-			hum.PlatformStand = false
-			hum.AutoRotate = true
-		end
-		for _, part in ipairs(char:GetDescendants()) do
-			if part:IsA("BasePart") then
-				part.CanCollide = true
-			end
-		end
-	end
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.PlatformStand = false
+            hum.AutoRotate = true
+        end
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = true
+            end
+        end
+    end
 end
 
--- Плавное перемещение к монете
+-- Плавное перемещение к монете с помощью Tween
 local function moveToCoin(coin)
-	local char = LocalPlayer.Character
-	local root = char and char:FindFirstChild("HumanoidRootPart")
-	if not root or not coin then return false end
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root or not coin then return false end
 
-	local depth = (_G.FarmMode == "UnderMap") and _G.FarmHeight or -1
-	local targetPos = coin.Position + Vector3.new(0, depth, 0)
+    local depth = (_G.FarmMode == "UnderMap") and _G.FarmHeight or -1
+    local targetPos = coin.Position + Vector3.new(0, depth, 0)
+    
+    -- Отменяем предыдущий твин если есть
+    if currentTween then
+        currentTween:Cancel()
+    end
 
-	local startPos = root.Position
-	local distance = (targetPos - startPos).Magnitude
-	local duration = distance / moveSpeed
-	local startTime = tick()
-
-	while tick() - startTime < duration do
-		if not _G.AutoFarm or not coin or not coin.Parent then
-			return false
-		end
-
-		local alpha = math.min((tick() - startTime) / duration, 1)
-		root.CFrame = CFrame.new(startPos:Lerp(targetPos, alpha))
-		root.AssemblyLinearVelocity = Vector3.zero
-		root.AssemblyAngularVelocity = Vector3.zero
-		task.wait()
-	end
-
-	-- Финальная позиция + лежание
-	root.CFrame = CFrame.new(targetPos) * CFrame.Angles(math.rad(90), 0, 0)
-	root.AssemblyLinearVelocity = Vector3.zero
-	root.AssemblyAngularVelocity = Vector3.zero
-
-	task.wait(0.12)
-
-	-- Собираем монету
-	pcall(function()
-		coin:Destroy()
-	end)
-
-	return true
+    local distance = (targetPos - root.Position).Magnitude
+    local duration = math.clamp(distance / moveSpeed, 0.1, 1.5)
+    
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    currentTween = TweenService:Create(root, tweenInfo, {
+        CFrame = CFrame.new(targetPos)
+    })
+    
+    currentTween:Play()
+    currentTween.Completed:Wait()
+    
+    -- После достижения позиции - лежим для лучшего срабатывания
+    root.CFrame = CFrame.new(targetPos) * CFrame.Angles(math.rad(90), 0, 0)
+    root.AssemblyLinearVelocity = Vector3.zero
+    root.AssemblyAngularVelocity = Vector3.zero
+    
+    task.wait(0.05)
+    
+    -- Пытаемся собрать монету разными способами
+    pcall(function()
+        if firetouchinterest then
+            firetouchinterest(root, coin, 0)
+            task.wait()
+            firetouchinterest(root, coin, 1)
+        end
+    end)
+    
+    -- Дополнительный способ - прямое уничтожение
+    pcall(function()
+        if coin and coin.Parent then
+            coin:Destroy()
+        end
+    end)
+    
+    return true
 end
 
 -- Главный цикл фарма
 task.spawn(function()
-	while true do
-		task.wait(0.1)
+    while true do
+        task.wait(_G.FarmDelay)
+        
+        if _G.AutoFarm and isInGame() then
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local root = char and char:FindFirstChild("HumanoidRootPart")
 
-		if _G.AutoFarm and isInGame() then
-			local char = LocalPlayer.Character
-			local hum = char and char:FindFirstChildOfClass("Humanoid")
-			local root = char and char:FindFirstChild("HumanoidRootPart")
+            if root and hum and hum.Health > 0 then
+                if not isFarming then
+                    isFarming = true
+                    enableFarmPhysics()
+                    notify("🪙 ФАРМ АКТИВИРОВАН", "Режим: " .. (_G.FarmMode == "UnderMap" and "Под картой" or "На карте"), 3)
+                end
 
-			if root and hum and hum.Health > 0 then
-				if not isFarming then
-					isFarming = true
-					enableFarmPhysics()
-				end
+                local coin = findClosestCoin()
+                if coin then
+                    moveToCoin(coin)
+                else
+                    task.wait(0.5)
+                end
+            else
+                if isFarming then
+                    isFarming = false
+                    disableFarmPhysics()
+                end
+            end
+        else
+            if isFarming then
+                isFarming = false
+                disableFarmPhysics()
+            end
+        end
+    end
+end)
 
-				local coin = findClosestCoin()
-				if coin then
-					moveToCoin(coin)
-				else
-					-- Если монет нет — просто ждём
-					task.wait(0.5)
-				end
-			else
-				isFarming = false
-				disableFarmPhysics()
-			end
-		else
-			if isFarming then
-				isFarming = false
-				disableFarmPhysics()
-			end
-		end
-	end
+-- Обработка выхода из игры
+LocalPlayer.CharacterAdded:Connect(function()
+    if _G.AutoFarm then
+        isFarming = false
+        disableFarmPhysics()
+        task.wait(1)
+        if _G.AutoFarm then
+            isFarming = true
+            enableFarmPhysics()
+        end
+    end
 end)
 
 -- ========================================================
@@ -651,7 +679,6 @@ local function isPlayerInLobby(player)
 end
 
 local function killAll()
-    -- ИСПРАВЛЕНО: Убран слеш перед тильдой
     if getMM2Role(LocalPlayer) ~= "Murderer" then
         notify("❌ ОШИБКА", "Вы не Мардер!", 3)
         return
@@ -687,7 +714,6 @@ local function killAll()
     local myHrp = myChar:FindFirstChild("HumanoidRootPart")
 
     for _, player in ipairs(Players:GetPlayers()) do
-        -- ИСПРАВЛЕНО: Убран слеш перед тильдой
         if player ~= LocalPlayer and player.Character then
             local targetChar = player.Character
             local hum = targetChar:FindFirstChildOfClass("Humanoid")
@@ -862,10 +888,10 @@ FarmTab:CreateSlider({
 
 FarmTab:CreateSlider({
     Name = "Глубина (Под картой)",
-    Range = {-8, -3.5},
-    Increment = 0.2,
+    Range = {-3.5, -1.5},
+    Increment = 0.1,
     Suffix = "",
-    CurrentValue = -5.5,
+    CurrentValue = -2.5,
     Callback = function(Value)
         _G.FarmHeight = Value
     end,
