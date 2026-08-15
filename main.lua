@@ -1,5 +1,5 @@
 -- ========================================================
--- ПУНКТ 1: ПОДСВЕТКА ИГРОКОВ (ESP)
+-- MM2 ULTIMATE HUB (ANDROID DELTA VERSION) - FULL FIXED
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -7,6 +7,10 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
 local GuiService = game:GetService("GuiService")
+local SoundService = game:GetService("SoundService")
+local VirtualUser = game:GetService("VirtualUser")
+local Lighting = game:GetService("Lighting")
+local Camera = Workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
 _G.Language = "RU"
@@ -24,15 +28,48 @@ local Translations = {
     }
 }
 
+-- Глобальные переменные настроек
 _G.RolesESP = true
 _G.InnocentColor = Color3.fromRGB(0, 255, 0)
 _G.ESPTransparency = 0.4
+_G.GunESP = true
+_G.GunHitboxEnabled = false
+_G.GunHitboxSize = 10
+_G.AntiKnifeHitbox = false
+_G.AntiBulletHitbox = false
+_G.AimbotEnabled = false
+_G.AimbotSmoothness = 0.3
+
+-- Автофарм настройки
+_G.CoinTeleportFarm = false
+_G.FarmSpeed = 20
+
+_G.Invisibility = false
+_G.AutoRejoin = true
+_G.AntiAFK = true
+_G.HitboxEnabled = false
+_G.HitboxSize = 10
+_G.HitboxTransparency = 0.7
+_G.FPSBoostEnabled = false
+_G.FakeName = ""
+_G.PosterURL = ""
+_G.PosterWidth = 4
+_G.PosterHeight = 4
+_G.Posters = {}
+_G.SilentAim = false
+_G.HitSoundEnabled = true
+_G.HitSoundVolume = 1
+_G.FlyEnabled = false
+_G.FlyNoClip = false
+_G.CustomCoinImage = ""
 
 local MurdererColor = Color3.fromRGB(255, 0, 0)
 local SheriffColor = Color3.fromRGB(0, 0, 255)
-
+local PinkColor = Color3.fromRGB(255, 105, 180)
 local activeHighlights = {}
+local activeGunHighlight = nil
 
+-- Очистка подсветки игрока
 local function removeHighlight(player)
     if activeHighlights[player] then
         if activeHighlights[player].Parent then
@@ -42,6 +79,7 @@ local function removeHighlight(player)
     end
 end
 
+-- Функция определения роли
 local function getMM2Role(player)
     local char = player.Character
     if not char then return "Innocent" end
@@ -55,6 +93,7 @@ local function getMM2Role(player)
     return "Innocent"
 end
 
+-- Обновление подсветки игрока
 local function updatePlayerESP(player)
     if player == LocalPlayer then return end
     
@@ -116,22 +155,7 @@ end)
 
 Players.PlayerRemoving:Connect(removeHighlight)
 
-
--- ========================================================
--- ПУНКТ 2: ПОДСВЕТКА ОРУЖИЯ (ESP WEAPON) И ХИТБОКСЫ
--- ========================================================
-
-Translations.RU.GunESPButton = "подсветка оружия"
-Translations.EN.GunESPButton = "ESP WEAPON"
-
-_G.GunESP = true
-_G.GunHitboxEnabled = false
-_G.GunHitboxSize = 10
-_G.AntiKnifeHitbox = false
-_G.AntiBulletHitbox = false
-
-local activeGunHighlight = nil
-
+-- Подсветка выпавшего пистолета
 local function clearGunESP()
     if activeGunHighlight then
         activeGunHighlight:Destroy()
@@ -173,6 +197,7 @@ task.spawn(function()
     end
 end)
 
+-- Увеличение зоны подбора пистолета
 task.spawn(function()
     while true do
         task.wait(0.4)
@@ -193,6 +218,7 @@ task.spawn(function()
     end
 end)
 
+-- Уменьшение хитбоксов ножа и пули
 task.spawn(function()
     while true do
         task.wait(0.3)
@@ -219,18 +245,7 @@ task.spawn(function()
     end
 end)
 
--- ========================================================
--- ПУНКТ 3: АВТО НАВОДКА И ВЫСТРЕЛ
--- ========================================================
-
-local Camera = Workspace.CurrentCamera
-
-Translations.RU.AutoGuidanceButton = "авто наводка"
-Translations.EN.AutoGuidanceButton = "auto-guidance"
-
-_G.AimbotEnabled = false
-_G.AimbotSmoothness = 0.3
-
+-- Авто-наводка (Aimbot)
 local function getAimbotTarget()
     local myRole = getMM2Role(LocalPlayer)
     local bestTarget = nil
@@ -295,15 +310,11 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ========================================================
--- ПУНКТ 4: ИСПРАВЛЕННЫЙ ФАРМ И СБОР МОНЕТ (COIN FARM)
+-- ИСПРАВЛЕННЫЙ МОДУЛЬ: НАДЕЖНЫЙ АВТОФАРМ С ГЛУБОКИМ ПОИСКОМ
 -- ========================================================
 
-_G.AutoFarm = false
-_G.FarmSpeed = 20
-_G.CoinTeleportFarm = false
-
 RunService.Stepped:Connect(function()
-    if (_G.AutoFarm or _G.CoinTeleportFarm) and LocalPlayer.Character then
+    if _G.CoinTeleportFarm and LocalPlayer.Character then
         for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = false
@@ -325,66 +336,52 @@ task.spawn(function()
     end
 end)
 
-local function getValidCoins()
-    local coins = {}
-    for _, obj in ipairs(Workspace:GetChildren()) do
-        local container = nil
-        if obj.Name == "CoinContainer" then
-            container = obj
-        elseif obj:FindFirstChild("CoinContainer") then
-            container = obj.CoinContainer
-        end
-        
-        if container then
-            for _, coin in ipairs(container:GetChildren()) do
-                if coin:IsA("BasePart") and coin.Transparency < 1 then
-                    table.insert(coins, coin)
-                end
-            end
-        end
-    end
-    return coins
-end
-
--- Надежный обходной телепорт-фарм с задержкой под серверный античит
 task.spawn(function()
     while true do
-        task.wait(0.3)
-        if _G.CoinTeleportFarm or _G.AutoFarm then
+        task.wait(0.15)
+        if _G.CoinTeleportFarm then
             local char = LocalPlayer.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
             local hum = char and char:FindFirstChildOfClass("Humanoid")
 
-            if root and hum and hum.Health > 0 then
-                local coins = getValidCoins()
-                for _, coin in ipairs(coins) do
-                    if not _G.CoinTeleportFarm and not _G.AutoFarm then break end
-                    if coin and coin.Parent and coin.Transparency < 1 then
-                        -- Телепортируемся прямо в центр монеты
-                        root.CFrame = coin.CFrame
-                        root.Velocity = Vector3.new(0, 0, 0)
+            if hrp and hum and hum.Health > 0 then
+                -- Глубокий поиск CoinContainer по всему Workspace
+                local coinContainer = workspace:FindFirstChild("CoinContainer", true)
+                
+                if coinContainer then
+                    local collected = false
+                    
+                    for _, coin in ipairs(coinContainer:GetChildren()) do
+                        if not _G.CoinTeleportFarm then break end
                         
-                        -- Небольшая пауза, чтобы сервер MM2 успел засчитать сбор коина в сумку
-                        task.wait(0.35)
+                        local targetPart = nil
+                        if coin:IsA("BasePart") then
+                            targetPart = coin
+                        elseif coin:IsA("Model") then
+                            targetPart = coin.PrimaryPart or coin:FindFirstChildWhichIsA("BasePart")
+                        end
+                        
+                        if targetPart and targetPart.Transparency < 1 then
+                            hrp.CFrame = targetPart.CFrame + Vector3.new(0, 1.5, 0)
+                            hrp.Velocity = Vector3.new(0, 0, 0)
+                            collected = true
+                            task.wait(0.2)
+                            break
+                        end
                     end
+                    
+                    if not collected then
+                        task.wait(0.5)
+                    end
+                else
+                    task.wait(0.5)
                 end
             end
         end
     end
 end)
 
--- ========================================================
--- ПУНКТ 5: НЕВИДИМОСТЬ, АВТО-ПЕРЕЗАХОД И ANTI-AFK
--- ========================================================
-
-local VirtualUser = game:GetService("VirtualUser")
-
-_G.Invisibility = false
-_G.AutoRejoin = true
-_G.AntiAFK = true
-
-local PinkColor = Color3.fromRGB(255, 105, 180)
-
+-- Anti-AFK & Server Invisibility
 LocalPlayer.Idled:Connect(function()
     if _G.AntiAFK then
         VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
@@ -432,7 +429,10 @@ local function setInvisibility(state)
             end
         end)
     else
-        if highlight then highlight:Destroy() end
+        if highlight then
+            highlight:Destroy()
+        end
+
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") or part:IsA("Decal") then
                 part.LocalTransparencyModifier = 0
@@ -452,14 +452,7 @@ GuiService.ErrorMessageChanged:Connect(function()
     end
 end)
 
--- ========================================================
--- ПУНКТ 6: ХИТБОКС МАРДЕРА
--- ========================================================
-
-_G.HitboxEnabled = false
-_G.HitboxSize = 10
-_G.HitboxTransparency = 0.7
-
+-- Хитбокс Мардера
 task.spawn(function()
     while true do
         task.wait(0.5)
@@ -494,16 +487,11 @@ task.spawn(function()
     end
 end)
 
--- ========================================================
--- ПУНКТ 8: FPS BOOSTER
--- ========================================================
-
-local Lighting = game:GetService("Lighting")
-_G.FPSBoostEnabled = false
-
+-- FPS Booster
 local function applyFPSBoost()
     Lighting.GlobalShadows = false
     Lighting.FogEnd = 9e9
+    
     for _, v in ipairs(Lighting:GetChildren()) do
         if v:IsA("PostEffect") or v:IsA("Atmosphere") then
             v.Enabled = false
@@ -516,7 +504,7 @@ local function applyFPSBoost()
                 obj.Material = Enum.Material.SmoothPlastic
             elseif obj:IsA("Decal") or obj:IsA("Texture") then
                 obj.Texture = ""
-            elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") then
+            elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
                 obj.Enabled = false
             end
         end
@@ -526,46 +514,45 @@ end
 task.spawn(function()
     while true do
         task.wait(1)
-        if _G.FPSBoostEnabled then applyFPSBoost() end
+        if _G.FPSBoostEnabled then
+            applyFPSBoost()
+        end
     end
 end)
 
--- ========================================================
--- МОДУЛЬ: NAME SPOOFER
--- ========================================================
+-- Name Spooker
+local function applyFakeName()
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("Humanoid") then
+        if _G.FakeName ~= "" then
+            char.Humanoid.DisplayName = _G.FakeName
+        end
+    end
+end
 
-_G.FakeName = "" 
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(1)
-    if _G.FakeName ~= "" and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        LocalPlayer.Character.Humanoid.DisplayName = _G.FakeName
-    end
+    applyFakeName()
 end)
 
--- ========================================================
--- МОДУЛЬ: POSTER SYSTEM
--- ========================================================
-
-_G.PosterURL = ""
-_G.PosterWidth = 4  
-_G.PosterHeight = 4 
-_G.Posters = {} 
-
+-- Custom Poster System
 local function placePoster()
+    local player = game.Players.LocalPlayer
     local rayOrigin = workspace.CurrentCamera.CFrame.Position
-    local rayDirection = workspace.CurrentCamera.CFrame.LookVector * 50 
+    local rayDirection = workspace.CurrentCamera.CFrame.LookVector * 50
+    
     local raycastParams = RaycastParams.new()
-    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
+    raycastParams.FilterDescendantsInstances = {player.Character}
     raycastParams.FilterType = Enum.RaycastFilterType.Exclude
     
     local raycastResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
     
     if raycastResult and _G.PosterURL ~= "" then
         local posterPart = Instance.new("Part")
-        posterPart.Size = Vector3.new(_G.PosterWidth, _G.PosterHeight, 0.1) 
+        posterPart.Size = Vector3.new(_G.PosterWidth, _G.PosterHeight, 0.1)
         posterPart.Anchored = true
         posterPart.CanCollide = false
-        posterPart.Transparency = 1 
+        posterPart.Transparency = 1
         posterPart.CFrame = CFrame.new(raycastResult.Position + (raycastResult.Normal * 0.05), raycastResult.Position + raycastResult.Normal)
         posterPart.Parent = workspace
         
@@ -578,14 +565,9 @@ local function placePoster()
     end
 end
 
--- ========================================================
--- МОДУЛЬ: SILENT AIM
--- ========================================================
-
-_G.SilentAim = false
-
+-- Silent Aim
 local function getMurderer()
-    for _, p in pairs(Players:GetPlayers()) do
+    for _, p in pairs(game.Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character then
             if p.Character:FindFirstChild("Knife") or (p.Backpack and p.Backpack:FindFirstChild("Knife")) then
                 return p.Character:FindFirstChild("HumanoidRootPart")
@@ -606,7 +588,7 @@ mt.__namecall = newcclosure(function(self, ...)
     if _G.SilentAim and name == "FireServer" and args[1] == "Shoot" then
         local target = getMurderer()
         if target then
-            args[2] = target.Position 
+            args[2] = target.Position
             return backup(self, unpack(args))
         end
     end
@@ -615,45 +597,43 @@ mt.__namecall = newcclosure(function(self, ...)
 end)
 setreadonly(mt, true)
 
--- ========================================================
--- МОДУЛЬ: HIT SOUNDS
--- ========================================================
-
-_G.HitSoundEnabled = true
-_G.HitSoundVolume = 1
-local soundService = game:GetService("SoundService")
+-- Custom Hit Sounds
+local function playCustomSound(soundId)
+    if not _G.HitSoundEnabled then return end
+    
+    local sound = Instance.new("Sound")
+    sound.SoundId = soundId
+    sound.Volume = _G.HitSoundVolume
+    sound.Parent = SoundService
+    
+    sound:Play()
+    
+    sound.Ended:Connect(function()
+        sound:Destroy()
+    end)
+end
 
 workspace.ChildRemoved:Connect(function(child)
     if child.Name and child:FindFirstChild("Humanoid") then
         for _, p in pairs(Players:GetPlayers()) do
             if p ~= LocalPlayer and p.Character == child then
                 if child.Humanoid.Health <= 0 then
-                    if _G.HitSoundEnabled then
-                        local sound = Instance.new("Sound")
-                        sound.SoundId = "rbxassetid://6034953932"
-                        sound.Volume = _G.HitSoundVolume
-                        sound.Parent = soundService
-                        sound:Play()
-                        sound.Ended:Connect(function() sound:Destroy() end)
-                    end
+                    playCustomSound("rbxassetid://6034953932")
                 end
             end
         end
     end
 end)
 
--- ========================================================
--- МОДУЛЬ: FLY + NOCLIP
--- ========================================================
-
-_G.FlyEnabled = false
-_G.FlyNoClip = false 
-local flyingSpeed = 50
-
+-- Fly + NoClip
 task.spawn(function()
+    local player = game.Players.LocalPlayer
+    local runService = game:GetService("RunService")
     local bodyVel, bodyGyro
-    RunService.RenderStepped:Connect(function()
-        local character = LocalPlayer.Character
+    local flyingSpeed = 50
+    
+    runService.RenderStepped:Connect(function()
+        local character = player.Character
         if not character or not character:FindFirstChild("HumanoidRootPart") or not character:FindFirstChild("Humanoid") then
             if bodyVel then bodyVel:Destroy() bodyVel = nil end
             if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
@@ -665,17 +645,21 @@ task.spawn(function()
         
         if _G.FlyEnabled and _G.FlyNoClip then
             for _, part in ipairs(character:GetDescendants()) do
-                if part:IsA("BasePart") then part.CanCollide = false end
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
             end
         end
         
         if _G.FlyEnabled then
             humanoid.PlatformStand = true
+            
             if not bodyVel then
                 bodyVel = Instance.new("BodyVelocity")
                 bodyVel.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
                 bodyVel.Parent = hrp
             end
+            
             if not bodyGyro then
                 bodyGyro = Instance.new("BodyGyro")
                 bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
@@ -683,14 +667,21 @@ task.spawn(function()
                 bodyGyro.Parent = hrp
             end
             
-            local camera = Workspace.CurrentCamera
+            local camera = workspace.CurrentCamera
             local moveDir = humanoid.MoveDirection
+            
             if moveDir.Magnitude > 0 then
                 moveDir = camera.CFrame.LookVector * (humanoid.MoveDirection:Dot(camera.CFrame.LookVector) > 0 and 1 or -1) * math.abs(moveDir.Magnitude)
-                bodyVel.Velocity = moveDir * flyingSpeed
+                
+                if humanoid.MoveDirection.Z < 0 then
+                    bodyVel.Velocity = camera.CFrame.LookVector * flyingSpeed
+                else
+                    bodyVel.Velocity = moveDir * flyingSpeed
+                end
             else
                 bodyVel.Velocity = Vector3.new(0, 0, 0)
             end
+            
             bodyGyro.CFrame = camera.CFrame
         else
             humanoid.PlatformStand = false
@@ -700,15 +691,11 @@ task.spawn(function()
     end)
 end)
 
--- ========================================================
--- МОДУЛЬ: CUSTOM COIN PNG
--- ========================================================
-
-_G.CustomCoinImage = ""
-
+-- Custom Coin PNG Textures
 local function applyCoinTexture(coin)
     if _G.CustomCoinImage ~= "" then
-        coin.Transparency = 1 
+        coin.Transparency = 1
+        
         local bgui = coin:FindFirstChild("CustomCoinGui")
         if not bgui then
             bgui = Instance.new("BillboardGui")
@@ -722,6 +709,7 @@ local function applyCoinTexture(coin)
             img.BackgroundTransparency = 1
             img.Image = _G.CustomCoinImage
             img.Parent = bgui
+            
             bgui.Parent = coin
         else
             bgui.CoinImage.Image = _G.CustomCoinImage
@@ -734,7 +722,7 @@ local function applyCoinTexture(coin)
     end
 end
 
-Workspace.DescendantAdded:Connect(function(descendant)
+workspace.DescendantAdded:Connect(function(descendant)
     if descendant.Name == "Coin" and descendant:IsA("BasePart") then
         task.wait(0.1)
         if _G.CustomCoinImage ~= "" then
@@ -744,7 +732,7 @@ Workspace.DescendantAdded:Connect(function(descendant)
 end)
 
 -- ========================================================
--- ИНТЕРФЕЙС RAYFIELD
+-- RAYFIELD UI INTERFACE
 -- ========================================================
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -761,29 +749,37 @@ local MainTab = Window:CreateTab("Главная / Main", 4483362458)
 local PosterTab = Window:CreateTab("Граффити / Posters", 4483362458)
 local MiscTab = Window:CreateTab("Разное / Misc", 4483362458)
 
--- Вкладка Main
+-- Главная вкладка
 MainTab:CreateToggle({
    Name = "ESP / Подсветка игроков",
    CurrentValue = _G.RolesESP,
-   Callback = function(Value) _G.RolesESP = Value end,
+   Callback = function(Value)
+       _G.RolesESP = Value
+   end,
 })
 
 MainTab:CreateColorPicker({
     Name = "Цвет мирных / Innocent ESP Color",
     Color = _G.InnocentColor,
-    Callback = function(Value) _G.InnocentColor = Value end
+    Callback = function(Value)
+        _G.InnocentColor = Value
+    end
 })
 
 MainTab:CreateToggle({
    Name = "ESP WEAPON / Подсветка оружия",
    CurrentValue = _G.GunESP,
-   Callback = function(Value) _G.GunESP = Value end,
+   Callback = function(Value)
+       _G.GunESP = Value
+   end,
 })
 
 MainTab:CreateToggle({
    Name = "Увеличить хитбокс пистолета / Gun Hitbox",
    CurrentValue = _G.GunHitboxEnabled,
-   Callback = function(Value) _G.GunHitboxEnabled = Value end,
+   Callback = function(Value)
+       _G.GunHitboxEnabled = Value
+   end,
 })
 
 MainTab:CreateSlider({
@@ -791,31 +787,41 @@ MainTab:CreateSlider({
    Range = {10, 30},
    Increment = 1,
    CurrentValue = _G.GunHitboxSize,
-   Callback = function(Value) _G.GunHitboxSize = Value end,
+   Callback = function(Value)
+       _G.GunHitboxSize = Value
+   end,
 })
 
 MainTab:CreateToggle({
    Name = "Мини-хитбокс ножа Мардера / Anti-Knife Hitbox",
    CurrentValue = _G.AntiKnifeHitbox,
-   Callback = function(Value) _G.AntiKnifeHitbox = Value end,
+   Callback = function(Value)
+       _G.AntiKnifeHitbox = Value
+   end,
 })
 
 MainTab:CreateToggle({
    Name = "Мини-хитбокс пуль Шерифа / Anti-Bullet Hitbox",
    CurrentValue = _G.AntiBulletHitbox,
-   Callback = function(Value) _G.AntiBulletHitbox = Value end,
+   Callback = function(Value)
+       _G.AntiBulletHitbox = Value
+   end,
 })
 
 MainTab:CreateToggle({
    Name = "Auto-guidance / Авто-наводка",
    CurrentValue = _G.AimbotEnabled,
-   Callback = function(Value) _G.AimbotEnabled = Value end,
+   Callback = function(Value)
+       _G.AimbotEnabled = Value
+   end,
 })
 
 MainTab:CreateToggle({
    Name = "Big Murderer Hitbox / Увеличить хитбокс Мардера",
    CurrentValue = _G.HitboxEnabled,
-   Callback = function(Value) _G.HitboxEnabled = Value end,
+   Callback = function(Value)
+       _G.HitboxEnabled = Value
+   end,
 })
 
 MainTab:CreateSlider({
@@ -823,13 +829,17 @@ MainTab:CreateSlider({
    Range = {5, 30},
    Increment = 1,
    CurrentValue = _G.HitboxSize,
-   Callback = function(Value) _G.HitboxSize = Value end,
+   Callback = function(Value)
+       _G.HitboxSize = Value
+   end,
 })
 
 MainTab:CreateToggle({
-   Name = "Auto-farm (Walk to coins) / Авто-фарм",
-   CurrentValue = _G.AutoFarm,
-   Callback = function(Value) _G.AutoFarm = Value end,
+   Name = "Auto-farm / Авто-сбор монет",
+   CurrentValue = _G.CoinTeleportFarm,
+   Callback = function(Value)
+       _G.CoinTeleportFarm = Value
+   end,
 })
 
 MainTab:CreateSlider({
@@ -837,39 +847,43 @@ MainTab:CreateSlider({
    Range = {16, 60},
    Increment = 1,
    CurrentValue = _G.FarmSpeed,
-   Callback = function(Value) _G.FarmSpeed = Value end,
-})
-
-MainTab:CreateToggle({
-   Name = "Телепортация по монетам / Coin Teleport Farm",
-   CurrentValue = _G.CoinTeleportFarm,
-   Callback = function(Value) _G.CoinTeleportFarm = Value end,
+   Callback = function(Value)
+       _G.FarmSpeed = Value
+   end,
 })
 
 MainTab:CreateToggle({
    Name = "Флай / Fly",
    CurrentValue = _G.FlyEnabled,
-   Callback = function(Value) _G.FlyEnabled = Value end,
+   Callback = function(Value)
+       _G.FlyEnabled = Value
+   end,
 })
 
 MainTab:CreateToggle({
-   Name = "Проходить сквозь стены / Fly No-Clip",
+   Name = "Проходить сквозь стены (при полете) / Fly No-Clip",
    CurrentValue = _G.FlyNoClip,
-   Callback = function(Value) _G.FlyNoClip = Value end,
+   Callback = function(Value)
+       _G.FlyNoClip = Value
+   end,
 })
 
 MainTab:CreateToggle({
-   Name = "Silent Aim (Убийство сквозь стены)",
+   Name = "Silent Aim (Убийство мардера сквозь стены)",
    CurrentValue = _G.SilentAim,
-   Callback = function(Value) _G.SilentAim = Value end,
+   Callback = function(Value)
+       _G.SilentAim = Value
+   end,
 })
 
--- Вкладка Posters
+-- Вкладка Граффити
 PosterTab:CreateInput({
    Name = "Ссылка на картинку / Poster URL",
    PlaceholderText = "rbxassetid://... или ссылка...",
    RemoveTextAfterFocusLost = false,
-   Callback = function(Text) _G.PosterURL = Text end,
+   Callback = function(Text)
+       _G.PosterURL = Text
+   end,
 })
 
 PosterTab:CreateSlider({
@@ -878,7 +892,9 @@ PosterTab:CreateSlider({
    Increment = 0.5,
    Suffix = "studs",
    CurrentValue = _G.PosterWidth or 4,
-   Callback = function(Value) _G.PosterWidth = Value end,
+   Callback = function(Value)
+       _G.PosterWidth = Value
+   end,
 })
 
 PosterTab:CreateSlider({
@@ -887,25 +903,33 @@ PosterTab:CreateSlider({
    Increment = 0.5,
    Suffix = "studs",
    CurrentValue = _G.PosterHeight or 4,
-   Callback = function(Value) _G.PosterHeight = Value end,
+   Callback = function(Value)
+       _G.PosterHeight = Value
+   end,
 })
 
 PosterTab:CreateButton({
    Name = "Повесить плакат / Place Poster",
-   Callback = function() if placePoster then placePoster() end end,
+   Callback = function()
+       if placePoster then
+           placePoster()
+       end
+   end,
 })
 
 PosterTab:CreateButton({
    Name = "Удалить все плакаты / Clear All Posters",
    Callback = function()
        if _G.Posters then
-           for _, poster in pairs(_G.Posters) do poster:Destroy() end
+           for _, poster in pairs(_G.Posters) do
+               poster:Destroy()
+           end
            _G.Posters = {}
        end
    end,
 })
 
--- Вкладка Misc
+-- Вкладка Разное
 MiscTab:CreateDropdown({
    Name = "Language / Язык",
    Options = {"RU", "EN"},
@@ -928,7 +952,7 @@ MiscTab:CreateInput({
    RemoveTextAfterFocusLost = false,
    Callback = function(Text)
        _G.CustomCoinImage = Text
-       for _, coin in ipairs(Workspace:GetDescendants()) do
+       for _, coin in ipairs(workspace:GetDescendants()) do
            if coin.Name == "Coin" and coin:IsA("BasePart") then
                applyCoinTexture(coin)
            end
@@ -942,6 +966,7 @@ MiscTab:CreateInput({
    RemoveTextAfterFocusLost = false,
    Callback = function(Text)
        _G.FakeName = Text
+       local LocalPlayer = game.Players.LocalPlayer
        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
            LocalPlayer.Character.Humanoid.DisplayName = Text
        end
@@ -951,13 +976,19 @@ MiscTab:CreateInput({
 MiscTab:CreateToggle({
    Name = "Invisibility / Невидимость",
    CurrentValue = _G.Invisibility,
-   Callback = function(Value) if setInvisibility then setInvisibility(Value) end end,
+   Callback = function(Value)
+       if setInvisibility then
+           setInvisibility(Value)
+       end
+   end,
 })
 
 MiscTab:CreateToggle({
    Name = "Auto-Rejoin / Авто перезаход",
    CurrentValue = _G.AutoRejoin,
-   Callback = function(Value) _G.AutoRejoin = Value end,
+   Callback = function(Value)
+       _G.AutoRejoin = Value
+   end,
 })
 
 MiscTab:CreateToggle({
@@ -965,20 +996,26 @@ MiscTab:CreateToggle({
    CurrentValue = _G.FPSBoostEnabled,
    Callback = function(Value)
        _G.FPSBoostEnabled = Value
-       if Value and applyFPSBoost then applyFPSBoost() end
+       if Value and applyFPSBoost then
+           applyFPSBoost()
+       end
    end,
 })
 
 MiscTab:CreateToggle({
    Name = "Anti-AFK / Защита от AFK",
    CurrentValue = _G.AntiAFK,
-   Callback = function(Value) _G.AntiAFK = Value end,
+   Callback = function(Value)
+       _G.AntiAFK = Value
+   end,
 })
 
 MiscTab:CreateToggle({
    Name = "Звук попадания / Килла (Hit Sound)",
    CurrentValue = _G.HitSoundEnabled,
-   Callback = function(Value) _G.HitSoundEnabled = Value end,
+   Callback = function(Value)
+       _G.HitSoundEnabled = Value
+   end,
 })
 
 MiscTab:CreateSlider({
@@ -987,8 +1024,9 @@ MiscTab:CreateSlider({
    Increment = 0.1,
    Suffix = "x",
    CurrentValue = _G.HitSoundVolume,
-   Callback = function(Value) _G.HitSoundVolume = Value end,
+   Callback = function(Value)
+       _G.HitSoundVolume = Value
+   end,
 })
 
 Rayfield:LoadConfiguration()
-
