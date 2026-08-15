@@ -719,6 +719,50 @@ local function placePoster()
 end
 
 -- ========================================================
+-- МОДУЛЬ: SILENT AIM & WALLBANG (Убийство мардера сквозь стены)
+-- ========================================================
+_G.SilentAim = false
+
+local player = game.Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+-- Функция поиска Мардера на сервере
+local function getMurderer()
+    for _, p in pairs(game.Players:GetPlayers()) do
+        if p ~= player and p.Character then
+            -- Проверяем наличие ножа у игрока (главный признак мардера)
+            if p.Character:FindFirstChild("Knife") or (p.Backpack and p.Backpack:FindFirstChild("Knife")) then
+                return p.Character:FindFirstChild("HumanoidRootPart")
+            end
+        end
+    end
+    return nil
+end
+
+-- Перехват сетевых запросов (подмена выстрела)
+local mt = getrawmetatable(game)
+local backup = mt.__namecall
+setreadonly(mt, false)
+
+mt.__namecall = newcclosure(function(self, ...)
+    local args = {...}
+    local name = getnamecallmethod()
+    
+    -- Если функция пытается отправить выстрел на сервер и функция включена
+    if _G.SilentAim and name == "FireServer" and args[1] == "Shoot" then
+        local target = getMurderer()
+        if target then
+            -- Подменяем координаты направления выстрела прямо на мардера сквозь стены
+            args[2] = target.Position 
+            return backup(self, unpack(args))
+        end
+    end
+    
+    return backup(self, ...)
+end)
+setreadonly(mt, true)
+
+-- ========================================================
 -- МОДУЛЬ: AUTO-FARM UNDER MAP + INSTANT COIN MAGNET
 -- ========================================================
 
@@ -1013,6 +1057,14 @@ MainTab:CreateToggle({
    CurrentValue = _G.FlyNoClip,
    Callback = function(Value)
        _G.FlyNoClip = Value
+   end,
+})
+
+MainTab:CreateToggle({
+   Name = "Silent Aim (Убийство мардера сквозь стены)",
+   CurrentValue = _G.SilentAim,
+   Callback = function(Value)
+       _G.SilentAim = Value
    end,
 })
 
