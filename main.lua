@@ -1,5 +1,5 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - СТАТИЧНЫЙ ФАРМ (БЕЗ ДРОЖАНИЯ И ПАДЕНИЙ)
+-- MM2 ULTIMATE HUB - МГНОВЕННЫЙ ФАРМ ИЗ-ПОД КАРТЫ (БЕЗ ГОЛОВЫ)
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -34,8 +34,8 @@ _G.PhantomMode = false
 _G.PhantomColor = Color3.fromRGB(255, 105, 180)
 _G.AutoFarm = false
 _G.FarmMode = "OnMap"
-_G.FarmDelay = 0.5
-_G.FarmHeight = -3
+_G.FarmDelay = 0.3
+_G.FarmHeight = -4.5
 
 local originalGravity = Workspace.Gravity
 
@@ -515,7 +515,7 @@ local function deactivatePhantomMode()
 end
 
 -- ========================================================
--- СИСТЕМА АВТО ФАРМА (СТАТИЧНЫЙ РЕЖИМ)
+-- СИСТЕМА АВТО ФАРМА (ИСПРАВЛЕННАЯ СБОРКА ИЗ-ПОД КАРТЫ)
 -- ========================================================
 local farmVelocity = nil
 
@@ -526,13 +526,11 @@ local function enableStaticPhysics()
     local root = char:FindFirstChild("HumanoidRootPart")
     local hum = char:FindFirstChildOfClass("Humanoid")
     
-    -- Выключаем гравитацию и анимации падения
     Workspace.Gravity = 0
     if hum then
         hum.PlatformStand = true
     end
     
-    -- Выключаем коллизию всех частей
     for _, part in ipairs(char:GetDescendants()) do
         if part:IsA("BasePart") then
             part.CanCollide = false
@@ -541,7 +539,6 @@ local function enableStaticPhysics()
         end
     end
 
-    -- Замораживаем физическое смещение тела
     if root and not farmVelocity then
         farmVelocity = Instance.new("BodyVelocity")
         farmVelocity.Name = "StaticFarmVelocity"
@@ -573,16 +570,20 @@ local function disableFarmPhysics()
     end
 end
 
-local function expandCoinHitbox(coin)
+-- Мульти-эмуляция касания всеми частями тела для 100% сработки сервера
+local function forceCollectCoin(coin)
+    local char = LocalPlayer.Character
+    if not char then return end
+
     pcall(function()
-        if coin:IsA("BasePart") then
-            if not coin:GetAttribute("OriginalSize") then
-                coin:SetAttribute("OriginalSize", coin.Size)
+        if firetouchinterest then
+            for _, part in ipairs(char:GetChildren()) do
+                if part:IsA("BasePart") then
+                    firetouchinterest(part, coin, 0)
+                    task.wait()
+                    firetouchinterest(part, coin, 1)
+                end
             end
-            local originalSize = coin:GetAttribute("OriginalSize")
-            coin.Size = Vector3.new(originalSize.X * 3, originalSize.Y * 3, originalSize.Z * 3)
-            coin.CanCollide = false
-            coin.Transparency = 0.3
         end
     end)
 end
@@ -608,28 +609,20 @@ task.spawn(function()
                 
                 local coin = getNearestCoin()
                 if coin then
-                    expandCoinHitbox(coin)
-                    
-                    -- Вычисляем позицию с учетом выбранного режима
                     local targetPos
                     if _G.FarmMode == "UnderMap" then
+                        -- Ставим персонажа глубоко под карту (без вылезания головы)
                         targetPos = Vector3.new(coin.Position.X, coin.Position.Y + _G.FarmHeight, coin.Position.Z)
                     else
                         targetPos = Vector3.new(coin.Position.X, coin.Position.Y + 1.5, coin.Position.Z)
                     end
                     
-                    -- Мгновенная статика без ускорений и физических качаний
                     root.CFrame = CFrame.new(targetPos)
                     root.AssemblyLinearVelocity = Vector3.zero
                     root.AssemblyAngularVelocity = Vector3.zero
                     
-                    -- Принудительно посылаем серверное касание
-                    pcall(function()
-                        if firetouchinterest then
-                            firetouchinterest(root, coin, 0)
-                            firetouchinterest(root, coin, 1)
-                        end
-                    end)
+                    -- Вызываем серверную сборку
+                    forceCollectCoin(coin)
                 end
             end
         else
@@ -863,7 +856,7 @@ FarmTab:CreateToggle({
                 _G.AutoFarm = false
                 return
             end
-            notify("🪙 ФАРМ ВКЛЮЧЕН", "Собираю монеты в статике...", 3)
+            notify("🪙 ФАРМ ВКЛЮЧЕН", "Собираю монеты...", 3)
         else
             notify("🚫 ФАРМ ВЫКЛЮЧЕН", "Остановлен", 3)
             disableFarmPhysics()
@@ -903,7 +896,7 @@ FarmTab:CreateSlider({
     Range = {-15, 15},
     Increment = 0.2,
     Suffix = " блоков",
-    CurrentValue = -3,
+    CurrentValue = -4.5,
     Callback = function(Value)
         _G.FarmHeight = Value
         notify("📏 ВЫСОТА", "Высота настроена: " .. Value .. " блоков", 2)
@@ -938,4 +931,4 @@ MiscTab:CreateSlider({
     end,
 })
 
-notify("✅ СКРИПТ ЗАГРУЖЕН!", "Статичный фарм без падений активирован", 5)
+notify("✅ СКРИПТ ОБНОВЛЕН!", "Исправлен сбор монет из-под карты", 5)
