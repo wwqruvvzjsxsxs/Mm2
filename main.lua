@@ -162,18 +162,34 @@ local function updatePlayerESP(player)
 end
 
 -- ========================================================
--- ESP СИСТЕМА (ОРУЖИЕ)
+-- ESP СИСТЕМА (ОРУЖИЕ) - ИСПРАВЛЕННАЯ
 -- ========================================================
 local activeGunHighlights = {}
+
+local function isGunObject(obj)
+    local name = obj.Name:lower()
+    
+    -- Более точные проверки для оружия
+    if name == "gun" or name == "pistol" or name == "пистолет" then
+        return true
+    end
+    
+    -- Проверяем, является ли объект Tool с оружейным именем
+    if obj:IsA("Tool") and (name:find("gun") or name:find("pistol") or name:find("пистолет")) then
+        return true
+    end
+    
+    return false
+end
 
 local function findGuns()
     local guns = {}
     
+    -- Ищем только настоящие пистолеты (Tools)
     for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Tool") or obj:IsA("Model") then
-            local name = obj.Name:lower()
-            if name:find("gun") or name:find("pistol") or name:find("пистолет") or 
-               name:find("knife") or name:find("нож") then
+        if obj:IsA("Tool") then
+            if isGunObject(obj) then
+                -- Проверяем, что оружие не у игрока в руках
                 local parent = obj.Parent
                 local isInCharacter = false
                 
@@ -189,23 +205,32 @@ local function findGuns()
                     table.insert(guns, obj)
                 end
             end
-        elseif obj:IsA("BasePart") or obj:IsA("MeshPart") then
-            local name = obj.Name:lower()
-            if name:find("gun") or name:find("pistol") or name:find("пистолет") or 
-               name:find("knife") or name:find("нож") then
-                local parent = obj.Parent
-                local isInCharacter = false
-                
-                while parent do
-                    if parent:IsA("Model") and parent:FindFirstChild("Humanoid") then
-                        isInCharacter = true
-                        break
+        end
+    end
+    
+    -- Если не нашли Tools, ищем части с именем пистолета
+    if #guns == 0 then
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("BasePart") or obj:IsA("MeshPart") then
+                local name = obj.Name:lower()
+                -- Ищем только конкретные части пистолета, не карту
+                if name == "gun" or name == "pistol" or name == "пистолет" or 
+                   name == "gunhandle" or name == "gunbarrel" or name == "gunbody" then
+                    -- Проверяем, что это не часть персонажа
+                    local parent = obj.Parent
+                    local isInCharacter = false
+                    
+                    while parent do
+                        if parent:IsA("Model") and parent:FindFirstChild("Humanoid") then
+                            isInCharacter = true
+                            break
+                        end
+                        parent = parent.Parent
                     end
-                    parent = parent.Parent
-                end
-                
-                if not isInCharacter then
-                    table.insert(guns, obj)
+                    
+                    if not isInCharacter then
+                        table.insert(guns, obj)
+                    end
                 end
             end
         end
@@ -215,6 +240,7 @@ local function findGuns()
 end
 
 local function updateGunESP()
+    -- Удаляем старые подсветки
     for gun, highlight in pairs(activeGunHighlights) do
         if highlight and highlight.Parent then
             highlight:Destroy()
@@ -224,6 +250,7 @@ local function updateGunESP()
     
     if not _G.GunESP then return end
     
+    -- Находим и подсвечиваем оружие
     local guns = findGuns()
     for _, gun in ipairs(guns) do
         local highlight = Instance.new("Highlight")
@@ -610,6 +637,56 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ========================================================
+-- СИСТЕМА УБИЙСТВА ВСЕХ (ДЛЯ МАРДЕРА)
+-- ========================================================
+local function killAll()
+    -- Проверяем, что мы мардер
+    if getMM2Role(LocalPlayer) ~= "Murderer" then
+        notify("❌ ОШИБКА", "Вы не Мардер!", 3)
+        return
+    end
+    
+    -- Проверяем, что мы в игре
+    if not isInGame() then
+        notify("❌ ОШИБКА", "Вы не в игре!", 3)
+        return
+    end
+    
+    notify("💀 УБИЙСТВО ВСЕХ", "Убиваю всех игроков через 2 секунды...", 3)
+    
+    -- Ждем 2 секунды
+    task.wait(2)
+    
+    local killedCount = 0
+    
+    -- Убиваем всех игроков
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                -- Телепортируемся к игроку (для реалистичности)
+                local myChar = LocalPlayer.Character
+                local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                local targetHrp = player.Character:FindFirstChild("HumanoidRootPart")
+                
+                if myHrp and targetHrp then
+                    myHrp.CFrame = CFrame.new(targetHrp.Position + Vector3.new(0, 2, 0))
+                end
+                
+                -- Убиваем игрока
+                hum.Health = 0
+                killedCount = killedCount + 1
+                
+                -- Небольшая задержка между убийствами
+                task.wait(0.1)
+            end
+        end
+    end
+    
+    notify("✅ ПОБЕДА!", "Убито игроков: " .. killedCount, 5)
+end
+
+-- ========================================================
 -- ИНТЕРФЕЙС
 -- ========================================================
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -627,6 +704,22 @@ local CombatTab = Window:CreateTab("⚔️ Сражение", 4483362458)
 local VisualTab = Window:CreateTab("👁️ Визуализация", 4483362458)
 local FarmTab = Window:CreateTab("🪙 Фарм", 4483362458)
 local MiscTab = Window:CreateTab("🔧 Прочее", 4483362458)
+
+-- ========================================================
+-- ВКЛАДКА: СРАЖЕНИЕ
+-- ========================================================
+
+CombatTab:CreateSection("Боевые функции")
+
+CombatTab:CreateButton({
+    Name = "💀 Убить всех",
+    Callback = function()
+        killAll()
+    end,
+})
+
+CombatTab:CreateLabel("Убивает всех игроков на карте")
+CombatTab:CreateLabel("Работает только если вы Мардер")
 
 -- ========================================================
 -- ВКЛАДКА: ВИЗУАЛИЗАЦИЯ
@@ -807,9 +900,5 @@ MiscTab:CreateSlider({
         _G.FlySpeed = Value
     end,
 })
-
--- Заглушки для других вкладок
-CombatTab:CreateSection("Боевые функции")
-CombatTab:CreateLabel("Здесь будут боевые функции")
 
 notify("✅ СКРИПТ ЗАГРУЖЕН!", "Базовая версия активирована!", 5)
