@@ -7,6 +7,7 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
+local UserInputService = game:GetService("UserInputService")
 
 -- Уведомления
 local function notify(title, text, duration)
@@ -291,7 +292,7 @@ end)
 Players.PlayerRemoving:Connect(removeHighlight)
 
 -- ========================================================
--- СИСТЕМА ФЛАЯ
+-- СИСТЕМА ФЛАЯ (ИСПРАВЛЕННАЯ)
 -- ========================================================
 local flyBodyVelocity = nil
 local flyBodyGyro = nil
@@ -338,6 +339,32 @@ local function startFly()
     flyBodyGyro.Parent = hrp
 end
 
+-- Отслеживаем нажатие кнопки прыжка
+local jumpPressed = false
+local descendPressed = false
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not _G.FlyEnabled then return end
+    
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        if input.KeyCode == Enum.KeyCode.Space then
+            jumpPressed = true
+        elseif input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.LeftControl then
+            descendPressed = true
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        if input.KeyCode == Enum.KeyCode.Space then
+            jumpPressed = false
+        elseif input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.LeftControl then
+            descendPressed = false
+        end
+    end
+end)
+
 RunService.RenderStepped:Connect(function()
     if not _G.FlyEnabled then return end
     
@@ -360,42 +387,47 @@ RunService.RenderStepped:Connect(function()
         local camera = Workspace.CurrentCamera
         if not camera then return end
         
-        -- Направление движения
-        local moveDirection = Vector3.new(0, 0, 0)
+        -- Получаем направление камеры (только горизонталь)
+        local cameraForward = (camera.CFrame.LookVector * Vector3.new(1, 0, 1)).Unit
+        local cameraRight = (camera.CFrame.RightVector * Vector3.new(1, 0, 1)).Unit
         
-        -- Получаем направление от джойстика
+        -- Получаем ввод с джойстика
         local joyDirection = hum.MoveDirection
         
-        -- Вперед/назад (относительно камеры)
-        if joyDirection.Z < 0 then -- Джойстик вперед
-            moveDirection = moveDirection + camera.CFrame.LookVector
-        elseif joyDirection.Z > 0 then -- Джойстик назад
-            moveDirection = moveDirection - camera.CFrame.LookVector
-        end
+        -- Вычисляем направление движения
+        local moveDirection = Vector3.zero
         
-        -- Вправо/влево (относительно камеры)
-        if joyDirection.X > 0 then -- Джойстик вправо
-            moveDirection = moveDirection + camera.CFrame.RightVector
-        elseif joyDirection.X < 0 then -- Джойстик влево
-            moveDirection = moveDirection - camera.CFrame.RightVector
-        end
+        -- Вперед/назад
+        moveDirection += cameraForward * (-joyDirection.Z)
         
-        -- Вверх (прыжок)
-        if hum.Jump then
-            moveDirection = moveDirection + Vector3.new(0, 1, 0)
-        end
+        -- Вправо/влево
+        moveDirection += cameraRight * joyDirection.X
         
-        -- Немного наклоняем вниз
-        moveDirection = moveDirection - Vector3.new(0, 0.1, 0)
-        
-        -- Применяем скорость
+        -- Нормализуем горизонтальное движение
         if moveDirection.Magnitude > 0 then
-            flyBodyVelocity.Velocity = moveDirection.Unit * _G.FlySpeed
-        else
-            flyBodyVelocity.Velocity = Vector3.new(0, -2, 0) -- Легкое парение вниз
+            moveDirection = moveDirection.Unit
         end
         
-        -- Персонаж смотрит туда же, куда и камера
+        -- Вертикальное движение
+        local verticalVelocity = 0
+        
+        if jumpPressed then
+            verticalVelocity = _G.FlySpeed * 0.6 -- Вверх
+        elseif descendPressed then
+            verticalVelocity = -_G.FlySpeed * 0.6 -- Вниз
+        else
+            -- Лёгкое удержание высоты (можно настроить)
+            verticalVelocity = -2 -- Немного вниз для стабильности
+        end
+        
+        -- Финальная скорость
+        local finalVelocity = Vector3.new(
+            moveDirection.X * _G.FlySpeed,
+            verticalVelocity,
+            moveDirection.Z * _G.FlySpeed
+        )
+        
+        flyBodyVelocity.Velocity = finalVelocity
         flyBodyGyro.CFrame = camera.CFrame
     end
 end)
