@@ -7,6 +7,7 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
+local TweenService = game:GetService("TweenService")
 
 -- Уведомления
 local function notify(title, text, duration)
@@ -543,52 +544,66 @@ local function deactivatePhantomMode()
 end
 
 -- ========================================================
--- СИСТЕМА АВТО ФАРМА (ПОЛНОСТЬЮ ИСПРАВЛЕННАЯ)
+-- СИСТЕМА АВТО ФАРМА (ИСПРАВЛЕННАЯ)
 -- ========================================================
-local antiFallVelocity = nil
+local farmTween = nil
+local farmBodyVelocity = nil
 
-local function createAntiFall()
+local function enableUnderMapPhysics()
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-    
     local hrp = char.HumanoidRootPart
     
-    if antiFallVelocity then
-        antiFallVelocity:Destroy()
+    if not farmBodyVelocity or farmBodyVelocity.Parent ~= hrp then
+        if farmBodyVelocity then farmBodyVelocity:Destroy() end
+        farmBodyVelocity = Instance.new("BodyVelocity")
+        farmBodyVelocity.Name = "FarmAntiFall"
+        farmBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        farmBodyVelocity.Velocity = Vector3.zero
+        farmBodyVelocity.Parent = hrp
     end
+end
+
+local function disableFarmPhysics()
+    if farmBodyVelocity then
+        farmBodyVelocity:Destroy()
+        farmBodyVelocity = nil
+    end
+    if farmTween then
+        farmTween:Cancel()
+        farmTween = nil
+    end
+end
+
+-- Поиск дна карты под монетой через Raycast (только для UnderMap)
+local function getUnderMapPosition(coinPos)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
     
-    antiFallVelocity = Instance.new("BodyVelocity")
-    antiFallVelocity.MaxForce = Vector3.new(0, math.huge, 0)
-    antiFallVelocity.Velocity = Vector3.new(0, 0, 0)
-    antiFallVelocity.Parent = hrp
-end
+    local ignoreList = {}
+    if LocalPlayer.Character then table.insert(ignoreList, LocalPlayer.Character) end
+    for _, coin in ipairs(findAllCoins()) do table.insert(ignoreList, coin) end
+    raycastParams.FilterDescendantsInstances = ignoreList
 
-local function removeAntiFall()
-    if antiFallVelocity then
-        antiFallVelocity:Destroy()
-        antiFallVelocity = nil
+    local rayResult = Workspace:Raycast(coinPos, Vector3.new(0, -30, 0), raycastParams)
+    
+    if rayResult then
+        return Vector3.new(coinPos.X, rayResult.Position.Y + _G.FarmHeight, coinPos.Z)
+    else
+        return Vector3.new(coinPos.X, coinPos.Y + _G.FarmHeight - 2, coinPos.Z)
     end
 end
 
--- Функция для увеличения хитбокса монеты
 local function expandCoinHitbox(coin)
     pcall(function()
         if coin:IsA("BasePart") then
-            -- Сохраняем оригинальный размер
             if not coin:GetAttribute("OriginalSize") then
                 coin:SetAttribute("OriginalSize", coin.Size)
             end
-            
-            -- Увеличиваем размер в 3 раза (не слишком много, чтобы не ломать игру)
             local originalSize = coin:GetAttribute("OriginalSize")
-            local newSize = Vector3.new(
-                originalSize.X * 3,
-                originalSize.Y * 3,
-                originalSize.Z * 3
-            )
-            coin.Size = newSize
+            coin.Size = Vector3.new(originalSize.X * 3, originalSize.Y * 3, originalSize.Z * 3)
             coin.CanCollide = false
-            coin.Transparency = 0.3 -- Полупрозрачные
+            coin.Transparency = 0.3
         end
     end)
 end
@@ -601,7 +616,7 @@ task.spawn(function()
             if not isInGame() then
                 notify("❌ ОШИБКА", "Вы не в игре! Фарм отключен!", 3)
                 _G.AutoFarm = false
-                removeAntiFall()
+                disableFarmPhysics()
                 continue
             end
             
@@ -610,85 +625,49 @@ task.spawn(function()
             local hum = char and char:FindFirstChildOfClass("Humanoid")
             
             if root and hum and hum.Health > 0 then
-                -- Отключаем коллизии для прохождения сквозь стены
-                for _, part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = false
-                    end
-                end
-                
                 local coin = getNearestCoin()
                 if coin then
-                    -- Увеличиваем хитбокс монеты
                     expandCoinHitbox(coin)
                     
-                    -- ВАЖНО: Телепортируемся НА ВЫСОТУ МОНЕТЫ + НАСТРОЙКА ВЫСОТЫ
-                    local targetY = coin.Position.Y + _G.FarmHeight
-                    
                     if _G.FarmMode == "UnderMap" then
-                        -- Для режима под картой
-                        -- Если FarmHeight положительный - летим над картой
-                        -- Если отрицательный - под карту
-                        targetY = coin.Position.Y + _G.FarmHeight
-                        
-                        -- Телепортируемся на нужную высоту
-                        root.CFrame = CFrame.new(coin.Position.X, targetY, coin.Position.Z)
-                        
-                        -- Создаем анти-падение чтобы не упасть
-                        createAntiFall()
-                        
-                        -- Дополнительно проверяем, не застряли ли мы
-                        task.wait(0.1)
-                        
-                        -- Если персонаж не может двигаться, пробуем другую высоту
-                        if root.Position.Y < -50 or root.Position.Y > 1000 then
-                            -- Что-то пошло не так, пробуем стандартную высоту
-                            root.CFrame = CFrame.new(coin.Position.X, coin.Position.Y - 3, coin.Position.Z)
-                            createAntiFall()
+                        -- РЕЖИМ "ПОД КАРТОЙ": Плавный Tween + Raycast + Ноуклип
+                        for _, part in ipairs(char:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                part.CanCollide = false
+                            end
                         end
+                        
+                        enableUnderMapPhysics()
+                        
+                        local targetPos = getUnderMapPosition(coin.Position)
+                        local distance = (root.Position - targetPos).Magnitude
+                        local speed = 40 
+                        local tweenTime = math.clamp(distance / speed, 0.05, _G.FarmDelay)
+                        
+                        farmTween = TweenService:Create(root, TweenInfo.new(tweenTime, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
+                        farmTween:Play()
+                        farmTween.Completed:Wait()
+                        
+                        pcall(function()
+                            if firetouchinterest then
+                                firetouchinterest(root, coin, 0)
+                                firetouchinterest(root, coin, 1)
+                            end
+                        end)
                     else
-                        -- Для режима "На карте"
-                        removeAntiFall()
-                        targetY = coin.Position.Y + _G.FarmHeight
+                        -- РЕЖИМ "НА КАРТЕ": Полностью старая работающая логика
+                        disableFarmPhysics()
+                        
+                        local targetY = coin.Position.Y + _G.FarmHeight
                         root.CFrame = CFrame.new(coin.Position.X, targetY, coin.Position.Z)
+                        root.Velocity = Vector3.zero
                     end
-                    
-                    -- Обнуляем скорость
-                    root.Velocity = Vector3.new(0, 0, 0)
-                    
-                    -- Принудительно пытаемся собрать монету
-                    pcall(function()
-                        -- Создаем невидимую часть для сбора
-                        local collector = Instance.new("Part")
-                        collector.Name = "CoinCollector"
-                        collector.Size = Vector3.new(3, 3, 3)
-                        collector.Transparency = 1
-                        collector.CanCollide = false
-                        collector.Anchored = true
-                        collector.Position = coin.Position
-                        collector.Parent = char
-                        
-                        -- Пытаемся телепортировать монету к нам
-                        if coin:IsA("BasePart") then
-                            coin.CFrame = CFrame.new(root.Position + Vector3.new(0, 2, 0))
-                        end
-                        
-                        task.wait(0.2)
-                        collector:Destroy()
-                    end)
                 end
             end
         else
-            if antiFallVelocity then
-                removeAntiFall()
-            end
+            disableFarmPhysics()
         end
     end
-end)
-
--- Убираем анти-падение при смерти
-LocalPlayer.CharacterAdded:Connect(function()
-    removeAntiFall()
 end)
 
 -- ========================================================
@@ -893,7 +872,7 @@ FarmTab:CreateToggle({
             notify("🪙 ФАРМ ВКЛЮЧЕН", "Собираю монеты...", 3)
         else
             notify("🚫 ФАРМ ВЫКЛЮЧЕН", "Остановлен", 3)
-            removeAntiFall()
+            disableFarmPhysics()
         end
     end,
 })
@@ -906,7 +885,7 @@ FarmTab:CreateDropdown({
     Callback = function(Option)
         if Option[1] == "На карте" then
             _G.FarmMode = "OnMap"
-            removeAntiFall()
+            disableFarmPhysics()
         else
             _G.FarmMode = "UnderMap"
         end
