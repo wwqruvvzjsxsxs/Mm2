@@ -763,6 +763,41 @@ end)
 setreadonly(mt, true)
 
 -- ========================================================
+-- МОДУЛЬ: CUSTOM HIT SOUNDS (Звуки попадания/убийства)
+-- ========================================================
+_G.HitSoundEnabled = true
+_G.HitSoundVolume = 1
+
+local soundService = game:GetService("SoundService")
+
+local function playCustomSound(soundId)
+    if not _G.HitSoundEnabled then return end
+    
+    local sound = Instance.new("Sound")
+    sound.SoundId = soundId
+    sound.Volume = _G.HitSoundVolume
+    sound.Parent = soundService
+    
+    sound:Play()
+    
+    sound.Ended:Connect(function()
+        sound:Destroy()
+    end)
+end
+
+workspace.ChildRemoved:Connect(function(child)
+    if child.Name and child:FindFirstChild("Humanoid") then
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character == child then
+                if child.Humanoid.Health <= 0 then
+                    playCustomSound("rbxassetid://6034953932") 
+                end
+            end
+        end
+    end
+end)
+
+-- ========================================================
 -- МОДУЛЬ: AUTO-FARM UNDER MAP + INSTANT COIN MAGNET
 -- ========================================================
 
@@ -1213,5 +1248,26 @@ MiscTab:CreateToggle({
    end,
 })
 
+-- Звуки попадания (Hit Sounds)
+MiscTab:CreateToggle({
+   Name = "Звук попадания / Килла (Hit Sound)",
+   CurrentValue = _G.HitSoundEnabled,
+   Callback = function(Value)
+       _G.HitSoundEnabled = Value
+   end,
+})
+
+MiscTab:CreateSlider({
+   Name = "Громкость звука / Sound Volume",
+   Range = {0.1, 2},
+   Increment = 0.1,
+   Suffix = "x",
+   CurrentValue = _G.HitSoundVolume,
+   Callback = function(Value)
+       _G.HitSoundVolume = Value
+   end,
+})
+
 -- Завершение инициализации
 Rayfield:LoadConfiguration()
+
