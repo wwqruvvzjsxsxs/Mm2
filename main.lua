@@ -1,5 +1,5 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - ИСПРАВЛЕННАЯ ВЕРСИЯ
+-- MM2 ULTIMATE HUB - ФИНАЛЬНАЯ ВЕРСИЯ
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -129,11 +129,11 @@ local function getNearestCoin()
 end
 
 -- ========================================================
--- WALLHACK (Исправленный - работает всегда)
+-- WALLHACK (Работает всегда)
 -- ========================================================
 task.spawn(function()
     while true do
-        task.wait(0.01)  -- Очень быстрое обновление
+        task.wait(0.01)
         if _G.WallHack then
             pcall(function()
                 local char = LocalPlayer.Character
@@ -150,96 +150,96 @@ task.spawn(function()
 end)
 
 -- ========================================================
--- ФЛАЙ (Из первого кода - рабочий)
+-- ФЛАЙ (УПРАВЛЕНИЕ КАМЕРОЙ - КУДА СМОТРИШЬ, ТУДА ЛЕТИШЬ)
 -- ========================================================
-local flyBodyVel = nil
-local flyBodyGyro = nil
-
 task.spawn(function()
-    while true do
-        task.wait(0.01)
-        local char = LocalPlayer.Character
-        if not char then 
-            if flyBodyVel then flyBodyVel:Destroy() flyBodyVel = nil end
-            if flyBodyGyro then flyBodyGyro:Destroy() flyBodyGyro = nil end
-            continue 
+    local bodyVel, bodyGyro
+    
+    RunService.RenderStepped:Connect(function()
+        local character = LocalPlayer.Character
+        if not character or not character:FindFirstChild("HumanoidRootPart") or not character:FindFirstChild("Humanoid") then
+            if bodyVel then bodyVel:Destroy() bodyVel = nil end
+            if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
+            return
         end
         
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        local hum = char:FindFirstChildOfClass("Humanoid")
+        local hrp = character.HumanoidRootPart
+        local humanoid = character.Humanoid
+        local camera = Workspace.CurrentCamera
         
-        if not hrp or not hum then continue end
-        
-        if _G.FlyEnabled then
-            if _G.FlyNoClip or _G.WallHack then
-                for _, part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = false
-                    end
+        if _G.FlyEnabled and _G.FlyNoClip then
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
                 end
             end
+        end
+        
+        if _G.FlyEnabled then
+            humanoid.PlatformStand = true
             
-            hum.PlatformStand = true
-            
-            if not flyBodyVel or flyBodyVel.Parent ~= hrp then
-                if flyBodyVel then flyBodyVel:Destroy() end
-                flyBodyVel = Instance.new("BodyVelocity")
-                flyBodyVel.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                flyBodyVel.Velocity = Vector3.new(0, 0, 0)
-                flyBodyVel.Parent = hrp
+            if not bodyVel then
+                bodyVel = Instance.new("BodyVelocity")
+                bodyVel.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                bodyVel.Velocity = Vector3.new(0, 0, 0)
+                bodyVel.Parent = hrp
             end
             
-            if not flyBodyGyro or flyBodyGyro.Parent ~= hrp then
-                if flyBodyGyro then flyBodyGyro:Destroy() end
-                flyBodyGyro = Instance.new("BodyGyro")
-                flyBodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-                flyBodyGyro.P = 10000
-                flyBodyGyro.CFrame = Camera.CFrame
-                flyBodyGyro.Parent = hrp
+            if not bodyGyro then
+                bodyGyro = Instance.new("BodyGyro")
+                bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                bodyGyro.P = 10000
+                bodyGyro.Parent = hrp
             end
             
+            -- НАПРАВЛЕНИЕ ДВИЖЕНИЯ ЗАВИСИТ ОТ КАМЕРЫ
             local moveDirection = Vector3.new(0, 0, 0)
             
-            -- Управление как в первом коде
-            if hum.MoveDirection.Z > 0 then
-                moveDirection = moveDirection + Camera.CFrame.LookVector
-            elseif hum.MoveDirection.Z < 0 then
-                moveDirection = moveDirection - Camera.CFrame.LookVector
+            -- Джойстик вперед = летим куда смотрит камера
+            if humanoid.MoveDirection.Z < 0 then
+                moveDirection = moveDirection + camera.CFrame.LookVector
+            -- Джойстик назад = летим назад от камеры
+            elseif humanoid.MoveDirection.Z > 0 then
+                moveDirection = moveDirection - camera.CFrame.LookVector
             end
             
-            if hum.MoveDirection.X > 0 then
-                moveDirection = moveDirection + Camera.CFrame.RightVector
-            elseif hum.MoveDirection.X < 0 then
-                moveDirection = moveDirection - Camera.CFrame.RightVector
+            -- Джойстик вправо = летим вправо от камеры
+            if humanoid.MoveDirection.X > 0 then
+                moveDirection = moveDirection + camera.CFrame.RightVector
+            -- Джойстик влево = летим влево от камеры
+            elseif humanoid.MoveDirection.X < 0 then
+                moveDirection = moveDirection - camera.CFrame.RightVector
             end
             
-            if hum.Jump then
+            -- Прыжок = вверх
+            if humanoid.Jump then
                 moveDirection = moveDirection + Vector3.new(0, 1, 0)
             end
             
+            -- Применяем скорость
             if moveDirection.Magnitude > 0 then
-                flyBodyVel.Velocity = moveDirection.Unit * _G.FlySpeed
+                bodyVel.Velocity = moveDirection.Unit * _G.FlySpeed
             else
-                flyBodyVel.Velocity = Vector3.new(0, 0, 0)
+                bodyVel.Velocity = Vector3.new(0, 0, 0)
             end
             
-            flyBodyGyro.CFrame = Camera.CFrame
+            -- Персонаж смотрит туда же куда камера
+            bodyGyro.CFrame = camera.CFrame
         else
-            hum.PlatformStand = false
-            if flyBodyVel then flyBodyVel:Destroy() flyBodyVel = nil end
-            if flyBodyGyro then flyBodyGyro:Destroy() flyBodyGyro = nil end
+            humanoid.PlatformStand = false
+            if bodyVel then bodyVel:Destroy() bodyVel = nil end
+            if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
         end
-    end
+    end)
 end)
 
 -- ========================================================
--- ФАНТОМ-ПРИЗРАК (Исправленный - телепорт на карту)
+-- ФАНТОМ-ПРИЗРАК (Телепорт на карту)
 -- ========================================================
 local function teleportToMapCenter()
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
     
-    -- Находим центр карты по монетам
     local coins = findAllCoins()
     if #coins > 0 then
         local totalX = 0
@@ -321,7 +321,7 @@ task.spawn(function()
 end)
 
 -- ========================================================
--- АВТОФАРМ (Исправленный - работает под картой)
+-- АВТОФАРМ
 -- ========================================================
 task.spawn(function()
     while true do
@@ -338,7 +338,6 @@ task.spawn(function()
             local hum = char and char:FindFirstChildOfClass("Humanoid")
 
             if root and hum and hum.Health > 0 then
-                -- NoClip для прохождения сквозь текстуры
                 for _, part in ipairs(char:GetDescendants()) do
                     if part:IsA("BasePart") then
                         part.CanCollide = false
@@ -353,11 +352,8 @@ task.spawn(function()
                     end)
                     
                     if _G.FarmMode == "UnderMap" then
-                        -- Под картой: телепорт на 3 блока НИЖЕ монеты
-                        -- Голова торчит чтобы подобрать
                         root.CFrame = CFrame.new(coin.Position.X, coin.Position.Y - 2.5, coin.Position.Z)
                     else
-                        -- На карте: телепорт на 3 блока ВЫШЕ монеты
                         root.CFrame = CFrame.new(coin.Position.X, coin.Position.Y + 3, coin.Position.Z)
                     end
                     
@@ -415,10 +411,8 @@ task.spawn(function()
                 if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
                     local targetHrp = target.Character:FindFirstChild("HumanoidRootPart")
                     
-                    -- Телепортируемся к цели
                     myHrp.CFrame = CFrame.new(targetHrp.Position + Vector3.new(0, 2, 0))
                     
-                    -- Берем нож
                     local knife = myChar:FindFirstChild("Knife") or (LocalPlayer:FindFirstChild("Backpack") and LocalPlayer.Backpack:FindFirstChild("Knife"))
                     if knife and knife:IsA("Tool") then
                         if knife.Parent ~= myChar then
@@ -688,14 +682,12 @@ end)
 local function rejoinGame()
     local success = false
     
-    -- Способ 1: Стандартный
     success = pcall(function()
         TeleportService:Teleport(game.PlaceId, LocalPlayer)
     end)
     
     if not success then
         task.wait(1)
-        -- Способ 2: TeleportToPlaceInstance
         success = pcall(function()
             TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
         end)
@@ -703,7 +695,6 @@ local function rejoinGame()
     
     if not success then
         task.wait(1)
-        -- Способ 3: Простой телепорт
         success = pcall(function()
             game:GetService("TeleportService"):Teleport(game.PlaceId)
         end)
@@ -716,7 +707,6 @@ local function rejoinGame()
     end
 end
 
--- Обработка кика
 GuiService.ErrorMessageChanged:Connect(function()
     if _G.AutoRejoin then
         notify("⚠️ КИКНУЛО!", "Перезаходим через 3 секунды...", 5)
@@ -933,7 +923,7 @@ FarmTab:CreateToggle({
     Callback = function(Value)
         _G.FlyEnabled = Value
         if Value then
-            notify("✈️ ФЛАЙ ВКЛЮЧЕН", "Управление как в оригинале!", 3)
+            notify("✈️ ФЛАЙ ВКЛЮЧЕН", "Летите куда смотрит камера!", 3)
         end
     end,
 })
