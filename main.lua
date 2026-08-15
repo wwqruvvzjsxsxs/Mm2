@@ -785,6 +785,75 @@ task.spawn(function()
 end)
 
 -- ========================================================
+-- МОДУЛЬ: ФЛАЙ С ПРОХОЖДЕНИЕМ СКВОЗЬ СТЕНЫ (Fly + NoClip)
+-- ========================================================
+
+_G.FlyEnabled = false
+_G.FlyNoClip = false -- Переключатель для стен
+local flyingSpeed = 50
+
+task.spawn(function()
+    local player = game.Players.LocalPlayer
+    local uis = game:GetService("UserInputService")
+    local runService = game:GetService("RunService")
+    
+    local bodyVel, bodyGyro
+    
+    runService.RenderStepped:Connect(function()
+        local character = player.Character
+        if not character or not character:FindFirstChild("HumanoidRootPart") or not character:FindFirstChild("Humanoid") then
+            if bodyVel then bodyVel:Destroy() bodyVel = nil end
+            if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
+            return
+        end
+        
+        local hrp = character.HumanoidRootPart
+        local humanoid = character.Humanoid
+        
+        -- Управление No-Clip (проход сквозь стены) во время полета
+        if _G.FlyEnabled and _G.FlyNoClip then
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+        
+        if _G.FlyEnabled then
+            humanoid.PlatformStand = true
+            
+            if not bodyVel then
+                bodyVel = Instance.new("BodyVelocity")
+                bodyVel.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                bodyVel.Parent = hrp
+            end
+            
+            if not bodyGyro then
+                bodyGyro = Instance.new("BodyGyro")
+                bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                bodyGyro.P = 10000
+                bodyGyro.Parent = hrp
+            end
+            
+            local camera = workspace.CurrentCamera
+            local moveDir = Vector3.new(0, 0, 0)
+            
+            if uis:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camera.CoordinateFrame.LookVector end
+            if uis:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camera.CoordinateFrame.LookVector end
+            if uis:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camera.CoordinateFrame.RightVector end
+            if uis:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camera.CoordinateFrame.RightVector end
+            
+            bodyVel.Velocity = moveDir * flyingSpeed
+            bodyGyro.CFrame = camera.CFrame
+        else
+            humanoid.PlatformStand = false
+            if bodyVel then bodyVel:Destroy() bodyVel = nil end
+            if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
+        end
+    end)
+end)
+
+-- ========================================================
 -- ПУНКТ 9: СБОРКА ИНТЕРФЕЙСА RAYFIELD
 -- ========================================================
 
@@ -928,6 +997,22 @@ MainTab:CreateToggle({
    CurrentValue = _G.CoinTeleportFarm,
    Callback = function(Value)
        _G.CoinTeleportFarm = Value
+   end,
+})
+
+MainTab:CreateToggle({
+   Name = "Флай / Fly",
+   CurrentValue = _G.FlyEnabled,
+   Callback = function(Value)
+       _G.FlyEnabled = Value
+   end,
+})
+
+MainTab:CreateToggle({
+   Name = "Проходить сквозь стены (при полете) / Fly No-Clip",
+   CurrentValue = _G.FlyNoClip,
+   Callback = function(Value)
+       _G.FlyNoClip = Value
    end,
 })
 
