@@ -1,5 +1,5 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - ФИНАЛЬНАЯ ВЕРСИЯ
+-- MM2 ULTIMATE HUB - ФИНАЛЬНАЯ ВЕРСИЯ (ИСПРАВЛЕННАЯ)
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -7,6 +7,7 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
 local GuiService = game:GetService("GuiService")
+local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 local VirtualUser = game:GetService("VirtualUser")
@@ -150,87 +151,173 @@ task.spawn(function()
 end)
 
 -- ========================================================
--- ФЛАЙ (УПРАВЛЕНИЕ КАМЕРОЙ - КУДА СМОТРИШЬ, ТУДА ЛЕТИШЬ)
+-- ФЛАЙ (ИСПРАВЛЕННАЯ ВЕРСИЯ)
 -- ========================================================
-task.spawn(function()
-    local bodyVel, bodyGyro
+local flyBodyVelocity = nil
+local flyBodyGyro = nil
+local flyKeys = {W = false, A = false, S = false, D = false, Space = false, LeftShift = false}
+
+-- Отслеживание клавиш
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
     
-    RunService.RenderStepped:Connect(function()
-        local character = LocalPlayer.Character
-        if not character or not character:FindFirstChild("HumanoidRootPart") or not character:FindFirstChild("Humanoid") then
-            if bodyVel then bodyVel:Destroy() bodyVel = nil end
-            if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
-            return
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        if input.KeyCode == Enum.KeyCode.W then flyKeys.W = true
+        elseif input.KeyCode == Enum.KeyCode.A then flyKeys.A = true
+        elseif input.KeyCode == Enum.KeyCode.S then flyKeys.S = true
+        elseif input.KeyCode == Enum.KeyCode.D then flyKeys.D = true
+        elseif input.KeyCode == Enum.KeyCode.Space then flyKeys.Space = true
+        elseif input.KeyCode == Enum.KeyCode.LeftShift then flyKeys.LeftShift = true
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        if input.KeyCode == Enum.KeyCode.W then flyKeys.W = false
+        elseif input.KeyCode == Enum.KeyCode.A then flyKeys.A = false
+        elseif input.KeyCode == Enum.KeyCode.S then flyKeys.S = false
+        elseif input.KeyCode == Enum.KeyCode.D then flyKeys.D = false
+        elseif input.KeyCode == Enum.KeyCode.Space then flyKeys.Space = false
+        elseif input.KeyCode == Enum.KeyCode.LeftShift then flyKeys.LeftShift = false
+        end
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") or not character:FindFirstChild("Humanoid") then
+        if flyBodyVelocity then flyBodyVelocity:Destroy() flyBodyVelocity = nil end
+        if flyBodyGyro then flyBodyGyro:Destroy() flyBodyGyro = nil end
+        return
+    end
+    
+    local hrp = character.HumanoidRootPart
+    local humanoid = character.Humanoid
+    local camera = Workspace.CurrentCamera
+    
+    if not camera then return end
+    
+    if _G.FlyEnabled then
+        humanoid.PlatformStand = true
+        humanoid.Sit = false
+        
+        -- Создаем BodyVelocity если его нет
+        if not flyBodyVelocity then
+            flyBodyVelocity = Instance.new("BodyVelocity")
+            flyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+            flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            flyBodyVelocity.Parent = hrp
         end
         
-        local hrp = character.HumanoidRootPart
-        local humanoid = character.Humanoid
-        local camera = Workspace.CurrentCamera
+        -- Создаем BodyGyro если его нет
+        if not flyBodyGyro then
+            flyBodyGyro = Instance.new("BodyGyro")
+            flyBodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+            flyBodyGyro.P = 10000
+            flyBodyGyro.D = 1000
+            flyBodyGyro.Parent = hrp
+        end
         
-        if _G.FlyEnabled and _G.FlyNoClip then
+        -- Определяем направление движения
+        local moveDirection = Vector3.new(0, 0, 0)
+        
+        -- Проверяем мобильное управление (джойстик)
+        local mobileDir = humanoid.MoveDirection
+        local isMobile = (mobileDir.Magnitude > 0.1)
+        
+        if isMobile then
+            -- Мобильное управление
+            local cameraForward = camera.CFrame.LookVector
+            local cameraRight = camera.CFrame.RightVector
+            
+            -- Вперед/назад относительно камеры
+            if math.abs(mobileDir.Z) > 0.1 then
+                moveDirection = moveDirection + cameraForward * (-mobileDir.Z)
+            end
+            
+            -- Вправо/влево относительно камеры
+            if math.abs(mobileDir.X) > 0.1 then
+                moveDirection = moveDirection + cameraRight * mobileDir.X
+            end
+        else
+            -- ПК управление
+            local cameraForward = camera.CFrame.LookVector
+            local cameraRight = camera.CFrame.RightVector
+            
+            if flyKeys.W then moveDirection = moveDirection + cameraForward end
+            if flyKeys.S then moveDirection = moveDirection - cameraForward end
+            if flyKeys.D then moveDirection = moveDirection + cameraRight end
+            if flyKeys.A then moveDirection = moveDirection - cameraRight end
+        end
+        
+        -- Вверх/вниз
+        if flyKeys.Space or (isMobile and humanoid.Jump) then
+            moveDirection = moveDirection + Vector3.new(0, 1, 0)
+        end
+        if flyKeys.LeftShift then
+            moveDirection = moveDirection - Vector3.new(0, 1, 0)
+        end
+        
+        -- Применяем скорость
+        if moveDirection.Magnitude > 0 then
+            flyBodyVelocity.Velocity = moveDirection.Unit * _G.FlySpeed
+        else
+            flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        end
+        
+        -- Персонаж смотрит туда же, куда и камера
+        flyBodyGyro.CFrame = CFrame.new(hrp.Position, hrp.Position + camera.CFrame.LookVector)
+        
+        -- NoClip если включен
+        if _G.FlyNoClip then
             for _, part in ipairs(character:GetDescendants()) do
                 if part:IsA("BasePart") then
                     part.CanCollide = false
                 end
             end
         end
+    else
+        -- Отключаем флай
+        humanoid.PlatformStand = false
         
-        if _G.FlyEnabled then
-            humanoid.PlatformStand = true
-            
-            if not bodyVel then
-                bodyVel = Instance.new("BodyVelocity")
-                bodyVel.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                bodyVel.Velocity = Vector3.new(0, 0, 0)
-                bodyVel.Parent = hrp
-            end
-            
-            if not bodyGyro then
-                bodyGyro = Instance.new("BodyGyro")
-                bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-                bodyGyro.P = 10000
-                bodyGyro.Parent = hrp
-            end
-            
-            -- НАПРАВЛЕНИЕ ДВИЖЕНИЯ ЗАВИСИТ ОТ КАМЕРЫ
-            local moveDirection = Vector3.new(0, 0, 0)
-            
-            -- Джойстик вперед = летим куда смотрит камера
-            if humanoid.MoveDirection.Z < 0 then
-                moveDirection = moveDirection + camera.CFrame.LookVector
-            -- Джойстик назад = летим назад от камеры
-            elseif humanoid.MoveDirection.Z > 0 then
-                moveDirection = moveDirection - camera.CFrame.LookVector
-            end
-            
-            -- Джойстик вправо = летим вправо от камеры
-            if humanoid.MoveDirection.X > 0 then
-                moveDirection = moveDirection + camera.CFrame.RightVector
-            -- Джойстик влево = летим влево от камеры
-            elseif humanoid.MoveDirection.X < 0 then
-                moveDirection = moveDirection - camera.CFrame.RightVector
-            end
-            
-            -- Прыжок = вверх
-            if humanoid.Jump then
-                moveDirection = moveDirection + Vector3.new(0, 1, 0)
-            end
-            
-            -- Применяем скорость
-            if moveDirection.Magnitude > 0 then
-                bodyVel.Velocity = moveDirection.Unit * _G.FlySpeed
-            else
-                bodyVel.Velocity = Vector3.new(0, 0, 0)
-            end
-            
-            -- Персонаж смотрит туда же куда камера
-            bodyGyro.CFrame = camera.CFrame
-        else
-            humanoid.PlatformStand = false
-            if bodyVel then bodyVel:Destroy() bodyVel = nil end
-            if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
+        if flyBodyVelocity then
+            flyBodyVelocity:Destroy()
+            flyBodyVelocity = nil
         end
-    end)
+        
+        if flyBodyGyro then
+            flyBodyGyro:Destroy()
+            flyBodyGyro = nil
+        end
+        
+        -- Сбрасываем клавиши
+        flyKeys.W = false
+        flyKeys.A = false
+        flyKeys.S = false
+        flyKeys.D = false
+        flyKeys.Space = false
+        flyKeys.LeftShift = false
+    end
+end)
+
+-- Очистка при смерти
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if flyBodyVelocity then
+        flyBodyVelocity:Destroy()
+        flyBodyVelocity = nil
+    end
+    if flyBodyGyro then
+        flyBodyGyro:Destroy()
+        flyBodyGyro = nil
+    end
+    flyKeys.W = false
+    flyKeys.A = false
+    flyKeys.S = false
+    flyKeys.D = false
+    flyKeys.Space = false
+    flyKeys.LeftShift = false
 end)
 
 -- ========================================================
@@ -677,7 +764,7 @@ LocalPlayer.Idled:Connect(function()
 end)
 
 -- ========================================================
--- АВТО-ПЕРЕЗАХОД (ИСПРАВЛЕННЫЙ)
+-- АВТО-ПЕРЕЗАХОД
 -- ========================================================
 local function rejoinGame()
     local success = false
@@ -923,7 +1010,7 @@ FarmTab:CreateToggle({
     Callback = function(Value)
         _G.FlyEnabled = Value
         if Value then
-            notify("✈️ ФЛАЙ ВКЛЮЧЕН", "Летите куда смотрит камера!", 3)
+            notify("✈️ ФЛАЙ ВКЛЮЧЕН", "WASD - движение, Space - вверх, Shift - вниз", 5)
         end
     end,
 })
