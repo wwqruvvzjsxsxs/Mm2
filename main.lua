@@ -27,6 +27,8 @@ _G.MurdererColor = Color3.fromRGB(255, 0, 0) -- Красный (строго)
 _G.SheriffColor = Color3.fromRGB(0, 0, 255) -- Синий (строго)
 _G.GunESP = true -- Подсветка оружия
 _G.GunColor = Color3.fromRGB(0, 0, 0) -- Черный цвет для оружия
+_G.FlyEnabled = false
+_G.FlySpeed = 50
 
 -- Определение роли
 local function getMM2Role(player)
@@ -106,18 +108,14 @@ local activeGunHighlights = {}
 local function findGuns()
     local guns = {}
     
-    -- Ищем оружие в Workspace
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("Tool") or obj:IsA("Model") then
             local name = obj.Name:lower()
-            -- Ищем пистолеты и ножи
             if name:find("gun") or name:find("pistol") or name:find("пистолет") or 
                name:find("knife") or name:find("нож") then
-                -- Проверяем, что оружие не у игрока в руках
                 local parent = obj.Parent
                 local isInCharacter = false
                 
-                -- Проверяем, не находится ли оружие у кого-то в инвентаре или руках
                 while parent do
                     if parent:IsA("Model") and parent:FindFirstChild("Humanoid") then
                         isInCharacter = true
@@ -134,7 +132,6 @@ local function findGuns()
             local name = obj.Name:lower()
             if name:find("gun") or name:find("pistol") or name:find("пистолет") or 
                name:find("knife") or name:find("нож") then
-                -- Проверяем, что это не часть персонажа
                 local parent = obj.Parent
                 local isInCharacter = false
                 
@@ -157,7 +154,6 @@ local function findGuns()
 end
 
 local function updateGunESP()
-    -- Удаляем старые подсветки
     for gun, highlight in pairs(activeGunHighlights) do
         if highlight and highlight.Parent then
             highlight:Destroy()
@@ -167,7 +163,6 @@ local function updateGunESP()
     
     if not _G.GunESP then return end
     
-    -- Находим и подсвечиваем оружие
     local guns = findGuns()
     for _, gun in ipairs(guns) do
         local highlight = Instance.new("Highlight")
@@ -201,12 +196,128 @@ task.spawn(function()
             end
         end
         
-        -- Обновляем подсветку оружия
         updateGunESP()
     end
 end)
 
 Players.PlayerRemoving:Connect(removeHighlight)
+
+-- ========================================================
+-- СИСТЕМА ФЛАЯ
+-- ========================================================
+local flyBodyVelocity = nil
+local flyBodyGyro = nil
+
+local function stopFly()
+    if flyBodyVelocity then
+        flyBodyVelocity:Destroy()
+        flyBodyVelocity = nil
+    end
+    if flyBodyGyro then
+        flyBodyGyro:Destroy()
+        flyBodyGyro = nil
+    end
+    
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.PlatformStand = false
+        end
+    end
+end
+
+local function startFly()
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    
+    if not hrp or not hum then return end
+    
+    hum.PlatformStand = true
+    
+    flyBodyVelocity = Instance.new("BodyVelocity")
+    flyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+    flyBodyVelocity.Parent = hrp
+    
+    flyBodyGyro = Instance.new("BodyGyro")
+    flyBodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    flyBodyGyro.P = 10000
+    flyBodyGyro.D = 100
+    flyBodyGyro.Parent = hrp
+end
+
+RunService.RenderStepped:Connect(function()
+    if not _G.FlyEnabled then return end
+    
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    
+    if not hrp or not hum or hum.Health <= 0 then
+        stopFly()
+        return
+    end
+    
+    if not flyBodyVelocity or not flyBodyGyro then
+        startFly()
+    end
+    
+    if flyBodyVelocity and flyBodyGyro then
+        local camera = Workspace.CurrentCamera
+        if not camera then return end
+        
+        -- Направление движения
+        local moveDirection = Vector3.new(0, 0, 0)
+        
+        -- Получаем направление от джойстика
+        local joyDirection = hum.MoveDirection
+        
+        -- Вперед/назад (относительно камеры)
+        if joyDirection.Z < 0 then -- Джойстик вперед
+            moveDirection = moveDirection + camera.CFrame.LookVector
+        elseif joyDirection.Z > 0 then -- Джойстик назад
+            moveDirection = moveDirection - camera.CFrame.LookVector
+        end
+        
+        -- Вправо/влево (относительно камеры)
+        if joyDirection.X > 0 then -- Джойстик вправо
+            moveDirection = moveDirection + camera.CFrame.RightVector
+        elseif joyDirection.X < 0 then -- Джойстик влево
+            moveDirection = moveDirection - camera.CFrame.RightVector
+        end
+        
+        -- Вверх (прыжок)
+        if hum.Jump then
+            moveDirection = moveDirection + Vector3.new(0, 1, 0)
+        end
+        
+        -- Немного наклоняем вниз
+        moveDirection = moveDirection - Vector3.new(0, 0.1, 0)
+        
+        -- Применяем скорость
+        if moveDirection.Magnitude > 0 then
+            flyBodyVelocity.Velocity = moveDirection.Unit * _G.FlySpeed
+        else
+            flyBodyVelocity.Velocity = Vector3.new(0, -2, 0) -- Легкое парение вниз
+        end
+        
+        -- Персонаж смотрит туда же, куда и камера
+        flyBodyGyro.CFrame = camera.CFrame
+    end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    if _G.FlyEnabled then
+        task.wait(0.5)
+        startFly()
+    end
+end)
 
 -- ========================================================
 -- ИНТЕРФЕЙС
@@ -283,14 +394,42 @@ VisualTab:CreateLabel("🔵 Синий - Шериф")
 VisualTab:CreateLabel("🟢 Зеленый - Невинный (настраиваемый)")
 VisualTab:CreateLabel("⚫ Черный - Оружие (настраиваемый)")
 
+-- ========================================================
+-- ВКЛАДКА: ПРОЧЕЕ
+-- ========================================================
+
+MiscTab:CreateSection("Флай")
+
+MiscTab:CreateToggle({
+    Name = "✈️ Флай",
+    CurrentValue = _G.FlyEnabled,
+    Callback = function(Value)
+        _G.FlyEnabled = Value
+        if Value then
+            startFly()
+            notify("✈️ ФЛАЙ ВКЛЮЧЕН", "Летите куда смотрит камера!", 3)
+        else
+            stopFly()
+            notify("🚫 ФЛАЙ ВЫКЛЮЧЕН", "Вы снова ходите!", 3)
+        end
+    end,
+})
+
+MiscTab:CreateSlider({
+    Name = "Скорость полета",
+    Range = {20, 200},
+    Increment = 10,
+    CurrentValue = _G.FlySpeed,
+    Callback = function(Value)
+        _G.FlySpeed = Value
+    end,
+})
+
 -- Заглушки для других вкладок
 CombatTab:CreateSection("Боевые функции")
 CombatTab:CreateLabel("Здесь будут боевые функции")
 
 FarmTab:CreateSection("Фарм функции")
 FarmTab:CreateLabel("Здесь будут функции фарма")
-
-MiscTab:CreateSection("Прочие функции")
-MiscTab:CreateLabel("Здесь будут прочие функции")
 
 notify("✅ СКРИПТ ЗАГРУЖЕН!", "Базовая версия активирована!", 5)
