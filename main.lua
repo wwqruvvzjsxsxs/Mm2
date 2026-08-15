@@ -1,5 +1,5 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - ИСПРАВЛЕННАЯ ВЕРСИЯ ДЛЯ DELTA
+-- MM2 ULTIMATE HUB - ПОЛНАЯ ВЕРСИЯ С УВЕДОМЛЕНИЯМИ
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -10,14 +10,18 @@ local GuiService = game:GetService("GuiService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 local VirtualUser = game:GetService("VirtualUser")
+local TweenService = game:GetService("TweenService")
 
--- Уведомления для отладки
-local function notify(msg)
+-- ========================================================
+-- СИСТЕМА УВЕДОМЛЕНИЙ
+-- ========================================================
+local function notify(title, text, duration)
     pcall(function()
         game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = "MM2 Hub",
-            Text = msg,
-            Duration = 3
+            Title = title,
+            Text = text,
+            Duration = duration or 5,
+            Icon = "rbxassetid://4483362458"
         })
     end)
 end
@@ -31,13 +35,12 @@ _G.ESPTransparency = 0.4
 _G.GunESP = true
 _G.GunHitboxEnabled = false
 _G.GunHitboxSize = 10
-_G.AntiKnifeHitbox = false
-_G.AntiBulletHitbox = false
 _G.AimbotEnabled = false
 _G.AimbotSmoothness = 0.3
 _G.AutoFarm = false
 _G.FarmSpeed = 20
 _G.CoinHitboxSize = 5
+_G.FarmTeleportDelay = 0.5
 _G.Invisibility = false
 _G.AutoRejoin = true
 _G.AntiAFK = true
@@ -46,12 +49,9 @@ _G.HitboxSize = 10
 _G.HitboxTransparency = 0.7
 _G.FPSBoostEnabled = false
 _G.FakeName = ""
-_G.SilentAim = false
 _G.FlyEnabled = false
 _G.FlyNoClip = false
-_G.CustomCoinImage = ""
-_G.HitSoundEnabled = true
-_G.HitSoundVolume = 1
+_G.FlySpeed = 50
 
 local MurdererColor = Color3.fromRGB(255, 0, 0)
 local SheriffColor = Color3.fromRGB(0, 0, 255)
@@ -71,6 +71,108 @@ local function getMM2Role(player)
     
     return "Innocent"
 end
+
+-- ========================================================
+-- ОТСЛЕЖИВАНИЕ СТАТУСА ИГРЫ И УВЕДОМЛЕНИЯ
+-- ========================================================
+local lastRole = ""
+local roundActive = false
+local lastMurdererWarning = nil
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+        
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        
+        if hum and hum.Health > 0 then
+            local newRole = getMM2Role(LocalPlayer)
+            
+            -- Уведомление при смене роли
+            if newRole ~= lastRole then
+                lastRole = newRole
+                
+                if newRole == "Murderer" then
+                    notify("🔪 ВЫ МАРДЕР!", "Быстрее убивайте всех! У вас есть нож!", 7)
+                elseif newRole == "Sheriff" then
+                    notify("🔫 ВЫ ШЕРИФ!", "Найдите и убейте Мардера! У вас есть пистолет!", 7)
+                elseif newRole == "Innocent" then
+                    notify("👤 ВЫ МИРНЫЙ", "Прячьтесь от Мардера и помогайте Шерифу!", 5)
+                end
+            end
+            
+            -- Уведомление о начале раунда
+            if not roundActive then
+                roundActive = true
+                notify("🎮 РАУНД НАЧАЛСЯ!", "Будьте аккуратнее! Осмотритесь вокруг!", 6)
+                
+                task.wait(2)
+                if getMM2Role(LocalPlayer) == "Sheriff" then
+                    notify("💡 ПОДСКАЗКА", "Следите за игроками с ножом! Это Мардер!", 5)
+                elseif getMM2Role(LocalPlayer) == "Innocent" then
+                    notify("💡 ПОДСКАЗКА", "Держитесь подальше от подозрительных игроков!", 5)
+                end
+            end
+        else
+            -- Мы в лобби или мертвы
+            if roundActive then
+                roundActive = false
+                lastRole = ""
+                notify("⏸️ РАУНД ОКОНЧЕН", "Ожидание следующего раунда...", 4)
+            end
+        end
+    end
+end)
+
+-- Уведомление о смерти
+LocalPlayer.CharacterAdded:Connect(function(character)
+    local humanoid = character:WaitForChild("Humanoid")
+    humanoid.Died:Connect(function()
+        notify("💀 ВЫ ПОГИБЛИ", "Не расстраивайтесь! В следующем раунде повезет!", 5)
+    end)
+end)
+
+-- Предупреждение о Мардере поблизости (для Шерифа)
+task.spawn(function()
+    while true do
+        task.wait(2)
+        
+        if getMM2Role(LocalPlayer) == "Sheriff" and roundActive then
+            local murdererNearby = false
+            local murdererName = ""
+            
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    local role = getMM2Role(player)
+                    if role == "Murderer" then
+                        local myChar = LocalPlayer.Character
+                        local murChar = player.Character
+                        
+                        if myChar and myChar:FindFirstChild("HumanoidRootPart") and 
+                           murChar and murChar:FindFirstChild("HumanoidRootPart") then
+                            
+                            local dist = (myChar.HumanoidRootPart.Position - murChar.HumanoidRootPart.Position).Magnitude
+                            
+                            if dist < 50 then
+                                murdererNearby = true
+                                murdererName = player.Name
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+            
+            if murdererNearby then
+                if not lastMurdererWarning or (tick() - lastMurdererWarning) > 10 then
+                    notify("⚠️ МАРДЕР РЯДОМ!", murdererName .. " находится поблизости! Будьте осторожны!", 5)
+                    lastMurdererWarning = tick()
+                end
+            end
+        end
+    end
+end)
 
 -- ========================================================
 -- ESP ИГРОКОВ
@@ -146,12 +248,10 @@ end)
 Players.PlayerRemoving:Connect(removeHighlight)
 
 -- ========================================================
--- ПОИСК МОНЕТ (УНИВЕРСАЛЬНЫЙ)
+-- ПОИСК МОНЕТ
 -- ========================================================
 local function findAllCoins()
     local coins = {}
-    
-    -- Ищем в Workspace
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("BasePart") or obj:IsA("MeshPart") then
             local name = obj.Name:lower()
@@ -160,7 +260,6 @@ local function findAllCoins()
             end
         end
     end
-    
     return coins
 end
 
@@ -172,8 +271,7 @@ local function getNearestCoin()
     local nearestCoin = nil
     local minDistance = 999999
 
-    local coins = findAllCoins()
-    for _, coin in ipairs(coins) do
+    for _, coin in ipairs(findAllCoins()) do
         local dist = (root.Position - coin.Position).Magnitude
         if dist < minDistance then
             minDistance = dist
@@ -185,18 +283,18 @@ local function getNearestCoin()
 end
 
 -- ========================================================
--- АВТОФАРМ МОНЕТ (ИСПРАВЛЕННЫЙ)
+-- АВТОФАРМ С НАСТРОЙКОЙ СКОРОСТИ
 -- ========================================================
 task.spawn(function()
     while true do
-        task.wait(0.1)
+        task.wait(_G.FarmTeleportDelay)
         if _G.AutoFarm then
             local char = LocalPlayer.Character
             local root = char and char:FindFirstChild("HumanoidRootPart")
             local hum = char and char:FindFirstChildOfClass("Humanoid")
 
             if root and hum and hum.Health > 0 then
-                -- Включаем Noclip
+                -- Noclip
                 for _, part in ipairs(char:GetDescendants()) do
                     if part:IsA("BasePart") then
                         part.CanCollide = false
@@ -205,18 +303,13 @@ task.spawn(function()
                 
                 local coin = getNearestCoin()
                 if coin then
-                    -- Увеличиваем хитбокс монеты
                     pcall(function()
                         coin.Size = Vector3.new(_G.CoinHitboxSize, _G.CoinHitboxSize, _G.CoinHitboxSize)
                         coin.CanCollide = false
-                        coin.Transparency = 0.5
                     end)
                     
-                    -- Телепорт на монету (над ней)
                     root.CFrame = CFrame.new(coin.Position.X, coin.Position.Y + 3, coin.Position.Z)
                     root.Velocity = Vector3.new(0, 0, 0)
-                else
-                    notify("Монеты не найдены! Ищем...")
                 end
             end
         end
@@ -284,6 +377,227 @@ task.spawn(function()
 end)
 
 -- ========================================================
+-- ФЛАЙ
+-- ========================================================
+local flyBodyVel = nil
+local flyBodyGyro = nil
+
+task.spawn(function()
+    while true do
+        task.wait(0.01)
+        local char = LocalPlayer.Character
+        if not char then 
+            if flyBodyVel then flyBodyVel:Destroy() flyBodyVel = nil end
+            if flyBodyGyro then flyBodyGyro:Destroy() flyBodyGyro = nil end
+            continue 
+        end
+        
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        
+        if not hrp or not hum then continue end
+        
+        if _G.FlyEnabled then
+            if _G.FlyNoClip then
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end
+            
+            hum.PlatformStand = true
+            
+            if not flyBodyVel or flyBodyVel.Parent ~= hrp then
+                if flyBodyVel then flyBodyVel:Destroy() end
+                flyBodyVel = Instance.new("BodyVelocity")
+                flyBodyVel.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                flyBodyVel.Velocity = Vector3.new(0, 0, 0)
+                flyBodyVel.Parent = hrp
+            end
+            
+            if not flyBodyGyro or flyBodyGyro.Parent ~= hrp then
+                if flyBodyGyro then flyBodyGyro:Destroy() end
+                flyBodyGyro = Instance.new("BodyGyro")
+                flyBodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                flyBodyGyro.P = 10000
+                flyBodyGyro.CFrame = Camera.CFrame
+                flyBodyGyro.Parent = hrp
+            end
+            
+            local moveDirection = Vector3.new(0, 0, 0)
+            
+            if hum.MoveDirection.Z > 0 then
+                moveDirection = moveDirection + Camera.CFrame.LookVector
+            elseif hum.MoveDirection.Z < 0 then
+                moveDirection = moveDirection - Camera.CFrame.LookVector
+            end
+            
+            if hum.MoveDirection.X > 0 then
+                moveDirection = moveDirection + Camera.CFrame.RightVector
+            elseif hum.MoveDirection.X < 0 then
+                moveDirection = moveDirection - Camera.CFrame.RightVector
+            end
+            
+            if hum.Jump then
+                moveDirection = moveDirection + Vector3.new(0, 1, 0)
+            end
+            
+            if moveDirection.Magnitude > 0 then
+                flyBodyVel.Velocity = moveDirection.Unit * _G.FlySpeed
+            else
+                flyBodyVel.Velocity = Vector3.new(0, 0, 0)
+            end
+            
+            flyBodyGyro.CFrame = Camera.CFrame
+        else
+            hum.PlatformStand = false
+            if flyBodyVel then flyBodyVel:Destroy() flyBodyVel = nil end
+            if flyBodyGyro then flyBodyGyro:Destroy() flyBodyGyro = nil end
+        end
+    end
+end)
+
+-- ========================================================
+-- АВТОНАВОДКА
+-- ========================================================
+local function getAimbotTarget()
+    local myRole = getMM2Role(LocalPlayer)
+    local bestTarget = nil
+    local minDistance = 999999
+
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
+    local myPos = myChar.HumanoidRootPart.Position
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+            
+            if hrp and hum and hum.Health > 0 then
+                local targetRole = getMM2Role(player)
+                local shouldTarget = false
+                
+                if myRole == "Sheriff" and targetRole == "Murderer" then
+                    shouldTarget = true
+                elseif myRole == "Murderer" and targetRole ~= "Murderer" then
+                    shouldTarget = true
+                end
+
+                if shouldTarget then
+                    local dist = (myPos - hrp.Position).Magnitude
+                    if dist < minDistance then
+                        minDistance = dist
+                        bestTarget = hrp
+                    end
+                end
+            end
+        end
+    end
+    return bestTarget
+end
+
+RunService.RenderStepped:Connect(function()
+    if _G.AimbotEnabled and LocalPlayer.Character then
+        local myChar = LocalPlayer.Character
+        local hum = myChar:FindFirstChildOfClass("Humanoid")
+        local hrp = myChar:FindFirstChild("HumanoidRootPart")
+
+        if hrp and hum and hum.Health > 0 then
+            local target = getAimbotTarget()
+            if target then
+                local lookAt = CFrame.lookAt(Camera.CFrame.Position, target.Position)
+                Camera.CFrame = Camera.CFrame:Lerp(lookAt, _G.AimbotSmoothness)
+                
+                if getMM2Role(LocalPlayer) == "Sheriff" then
+                    local gun = myChar:FindFirstChild("Gun") or (LocalPlayer:FindFirstChild("Backpack") and LocalPlayer.Backpack:FindFirstChild("Gun"))
+                    if gun and gun:IsA("Tool") then
+                        if gun.Parent ~= myChar then
+                            hum:EquipTool(gun)
+                        end
+                        gun:Activate()
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- ========================================================
+-- НЕВИДИМОСТЬ
+-- ========================================================
+local invisLoop = nil
+
+local function setInvisibility(state)
+    _G.Invisibility = state
+    local char = LocalPlayer.Character
+    if not char then return end
+
+    if state then
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                part.LocalTransparencyModifier = 1
+            end
+        end
+        
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "Self_Invis_Highlight"
+        highlight.FillColor = Color3.fromRGB(255, 105, 180)
+        highlight.OutlineColor = Color3.fromRGB(255, 192, 203)
+        highlight.FillTransparency = 0.7
+        highlight.OutlineTransparency = 0
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.Parent = char
+        
+        invisLoop = task.spawn(function()
+            while _G.Invisibility and char and char.Parent do
+                task.wait(0.1)
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                        part.LocalTransparencyModifier = 1
+                    end
+                end
+                
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+        
+        notify("👻 НЕВИДИМОСТЬ ВКЛЮЧЕНА", "Можно собирать монеты и убивать!", 5)
+    else
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.LocalTransparencyModifier = 0
+            end
+        end
+        
+        local highlight = char:FindFirstChild("Self_Invis_Highlight")
+        if highlight then
+            highlight:Destroy()
+        end
+        
+        if invisLoop then
+            task.cancel(invisLoop)
+            invisLoop = nil
+        end
+        
+        notify("👁️ НЕВИДИМОСТЬ ВЫКЛЮЧЕНА", "Вас снова видно!", 3)
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+    _G.Invisibility = false
+    if invisLoop then
+        task.cancel(invisLoop)
+        invisLoop = nil
+    end
+end)
+
+-- ========================================================
 -- ANTI-AFK
 -- ========================================================
 LocalPlayer.Idled:Connect(function()
@@ -299,6 +613,7 @@ end)
 -- ========================================================
 GuiService.ErrorMessageChanged:Connect(function()
     if _G.AutoRejoin then
+        notify("⚠️ ВНИМАНИЕ!", "Произошла ошибка! Перезаходим...", 5)
         task.wait(1)
         TeleportService:Teleport(game.PlaceId, LocalPlayer)
     end
@@ -377,19 +692,20 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ========================================================
--- СБОРКА ИНТЕРФЕЙСА
+-- ИНТЕРФЕЙС
 -- ========================================================
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
     Name = "MM2 Ultimate Hub",
     LoadingTitle = "MM2 Script",
-    LoadingSubtitle = "Fixed for Delta",
+    LoadingSubtitle = "Full Version",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
 
 local MainTab = Window:CreateTab("Главная", 4483362458)
+local FarmTab = Window:CreateTab("Фарм", 4483362458)
 local MiscTab = Window:CreateTab("Разное", 4483362458)
 
 -- Главная вкладка
@@ -398,39 +714,6 @@ MainTab:CreateToggle({
     CurrentValue = _G.RolesESP,
     Callback = function(Value)
         _G.RolesESP = Value
-    end,
-})
-
-MainTab:CreateToggle({
-    Name = "Auto-farm / Авто-фарм монет",
-    CurrentValue = _G.AutoFarm,
-    Callback = function(Value)
-        _G.AutoFarm = Value
-        if Value then
-            notify("Авто-фарм включен! Ищу монеты...")
-        else
-            notify("Авто-фарм выключен")
-        end
-    end,
-})
-
-MainTab:CreateSlider({
-    Name = "Скорость персонажа",
-    Range = {16, 100},
-    Increment = 1,
-    CurrentValue = _G.FarmSpeed,
-    Callback = function(Value)
-        _G.FarmSpeed = Value
-    end,
-})
-
-MainTab:CreateSlider({
-    Name = "Размер хитбокса монет",
-    Range = {3, 20},
-    Increment = 1,
-    CurrentValue = _G.CoinHitboxSize,
-    Callback = function(Value)
-        _G.CoinHitboxSize = Value
     end,
 })
 
@@ -460,7 +743,111 @@ MainTab:CreateSlider({
     end,
 })
 
+MainTab:CreateToggle({
+    Name = "Автонаводка",
+    CurrentValue = _G.AimbotEnabled,
+    Callback = function(Value)
+        _G.AimbotEnabled = Value
+        if Value then
+            notify("🎯 АВТОНАВОДКА ВКЛЮЧЕНА", "Наводитесь на цель автоматически!", 3)
+        end
+    end,
+})
+
+MainTab:CreateSlider({
+    Name = "Плавность наводки",
+    Range = {0.1, 1},
+    Increment = 0.05,
+    CurrentValue = _G.AimbotSmoothness,
+    Callback = function(Value)
+        _G.AimbotSmoothness = Value
+    end,
+})
+
+-- Вкладка Фарм
+FarmTab:CreateToggle({
+    Name = "Авто-фарм монет",
+    CurrentValue = _G.AutoFarm,
+    Callback = function(Value)
+        _G.AutoFarm = Value
+        if Value then
+            notify("🪙 АВТО-ФАРМ ВКЛЮЧЕН", "Начинаю собирать монеты!", 3)
+        end
+    end,
+})
+
+FarmTab:CreateSlider({
+    Name = "Скорость подбора монет",
+    Range = {0.1, 2},
+    Increment = 0.1,
+    Suffix = "сек",
+    CurrentValue = _G.FarmTeleportDelay,
+    Callback = function(Value)
+        _G.FarmTeleportDelay = Value
+        if Value < 0.3 then
+            notify("⚠️ ОСТОРОЖНО!", "Слишком быстро может кикнуть!", 3)
+        end
+    end,
+})
+
+FarmTab:CreateSlider({
+    Name = "Скорость персонажа",
+    Range = {16, 100},
+    Increment = 1,
+    CurrentValue = _G.FarmSpeed,
+    Callback = function(Value)
+        _G.FarmSpeed = Value
+    end,
+})
+
+FarmTab:CreateSlider({
+    Name = "Размер хитбокса монет",
+    Range = {3, 20},
+    Increment = 1,
+    CurrentValue = _G.CoinHitboxSize,
+    Callback = function(Value)
+        _G.CoinHitboxSize = Value
+    end,
+})
+
+FarmTab:CreateToggle({
+    Name = "Флай",
+    CurrentValue = _G.FlyEnabled,
+    Callback = function(Value)
+        _G.FlyEnabled = Value
+        if Value then
+            notify("✈️ ФЛАЙ ВКЛЮЧЕН", "Управление: WASD + Прыжок (вверх)", 3)
+        end
+    end,
+})
+
+FarmTab:CreateToggle({
+    Name = "Сквозь стены (при флае)",
+    CurrentValue = _G.FlyNoClip,
+    Callback = function(Value)
+        _G.FlyNoClip = Value
+    end,
+})
+
+FarmTab:CreateSlider({
+    Name = "Скорость полета",
+    Range = {20, 200},
+    Increment = 10,
+    CurrentValue = _G.FlySpeed,
+    Callback = function(Value)
+        _G.FlySpeed = Value
+    end,
+})
+
 -- Разное
+MiscTab:CreateToggle({
+    Name = "Невидимость",
+    CurrentValue = _G.Invisibility,
+    Callback = function(Value)
+        setInvisibility(Value)
+    end,
+})
+
 MiscTab:CreateToggle({
     Name = "Anti-AFK",
     CurrentValue = _G.AntiAFK,
@@ -474,6 +861,14 @@ MiscTab:CreateToggle({
     CurrentValue = _G.FPSBoostEnabled,
     Callback = function(Value)
         _G.FPSBoostEnabled = Value
+    end,
+})
+
+MiscTab:CreateToggle({
+    Name = "Авто-перезаход",
+    CurrentValue = _G.AutoRejoin,
+    Callback = function(Value)
+        _G.AutoRejoin = Value
     end,
 })
 
@@ -494,20 +889,12 @@ MiscTab:CreateButton({
         local char = LocalPlayer.Character
         if coin and char and char:FindFirstChild("HumanoidRootPart") then
             char.HumanoidRootPart.CFrame = CFrame.new(coin.Position + Vector3.new(0, 3, 0))
-            notify("Телепортирован к монете!")
+            notify("🪙 ТЕЛЕПОРТ", "Телепортирован к монете!", 3)
         else
-            notify("Монеты не найдены!")
+            notify("❌ ОШИБКА", "Монеты не найдены!", 3)
         end
     end,
 })
 
-MiscTab:CreateButton({
-    Name = "Показать количество монет",
-    Callback = function()
-        local coins = findAllCoins()
-        notify("Найдено монет: " .. #coins)
-    end,
-})
-
 Rayfield:LoadConfiguration()
-notify("Скрипт загружен успешно!")
+notify("✅ СКРИПТ ЗАГРУЖЕН!", "Все функции активны! Удачной игры!", 5)
