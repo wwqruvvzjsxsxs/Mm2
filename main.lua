@@ -29,6 +29,10 @@ _G.GunESP = true -- Подсветка оружия
 _G.GunColor = Color3.fromRGB(0, 0, 0) -- Черный цвет для оружия
 _G.FlyEnabled = false
 _G.FlySpeed = 50
+_G.PhantomMode = false -- Фантомный призрак
+_G.AutoFarm = false -- Авто фарм
+_G.FarmMode = "OnMap" -- Режим фарма: "OnMap" или "UnderMap"
+_G.FarmDelay = 0.5 -- Задержка между телепортациями
 
 -- Определение роли
 local function getMM2Role(player)
@@ -42,6 +46,62 @@ local function getMM2Role(player)
     end
     
     return "Innocent"
+end
+
+-- Проверка: в игре ли мы
+local function isInGame()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    return hum and hum.Health > 0
+end
+
+-- Проверка: начался ли раунд
+local function isRoundActive()
+    if not isInGame() then return false end
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player.Character then
+            local role = getMM2Role(player)
+            if role ~= "Innocent" then
+                return true
+            end
+        end
+    end
+    
+    return false
+end
+
+-- Поиск монет
+local function findAllCoins()
+    local coins = {}
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") or obj:IsA("MeshPart") then
+            local name = obj.Name:lower()
+            if (name:find("coin") or name:find("монет")) and obj.Transparency < 0.9 then
+                table.insert(coins, obj)
+            end
+        end
+    end
+    return coins
+end
+
+local function getNearestCoin()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    local root = char.HumanoidRootPart
+
+    local nearestCoin = nil
+    local minDistance = 999999
+
+    for _, coin in ipairs(findAllCoins()) do
+        local dist = (root.Position - coin.Position).Magnitude
+        if dist < minDistance then
+            minDistance = dist
+            nearestCoin = coin
+        end
+    end
+    
+    return nearestCoin
 end
 
 -- ========================================================
@@ -320,6 +380,161 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ========================================================
+-- СИСТЕМА ФАНТОМНОГО ПРИЗРАКА
+-- ========================================================
+local phantomLoop = nil
+
+local function findRandomPlayer()
+    local alivePlayers = {}
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                table.insert(alivePlayers, player)
+            end
+        end
+    end
+    
+    if #alivePlayers == 0 then return nil end
+    
+    local randomIndex = math.random(1, #alivePlayers)
+    return alivePlayers[randomIndex]
+end
+
+local function teleportToRandomPlayer()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return false end
+    
+    local targetPlayer = findRandomPlayer()
+    if not targetPlayer or not targetPlayer.Character then return false end
+    
+    local targetHrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not targetHrp then return false end
+    
+    -- Телепортируемся к игроку (немного сбоку)
+    local offset = Vector3.new(math.random(-3, 3), 2, math.random(-3, 3))
+    char.HumanoidRootPart.CFrame = CFrame.new(targetHrp.Position + offset)
+    
+    return true
+end
+
+local function activatePhantomMode()
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    -- Телепортируемся к случайному игроку
+    local teleported = teleportToRandomPlayer()
+    if not teleported then
+        notify("❌ ОШИБКА", "Не удалось найти игрока для телепортации!", 3)
+        _G.PhantomMode = false
+        return
+    end
+    
+    notify("👻 ФАНТОМНЫЙ РЕЖИМ", "Вы телепортированы к игроку! Вас никто не видит!", 5)
+    
+    -- Запускаем цикл невидимости
+    phantomLoop = task.spawn(function()
+        while _G.PhantomMode and char and char.Parent do
+            task.wait(0.1)
+            
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                -- Делаем персонажа невидимым
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                        part.LocalTransparencyModifier = 1
+                    end
+                end
+                
+                -- Отключаем коллизии
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                        part.CanTouch = false
+                        part.CanQuery = false
+                    end
+                end
+            end
+        end
+    end)
+end
+
+local function deactivatePhantomMode()
+    if phantomLoop then
+        task.cancel(phantomLoop)
+        phantomLoop = nil
+    end
+    
+    local char = LocalPlayer.Character
+    if char then
+        -- Возвращаем видимость
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.LocalTransparencyModifier = 0
+                part.CanCollide = true
+                part.CanTouch = true
+                part.CanQuery = true
+            end
+        end
+    end
+    
+    notify("👁️ ФАНТОМНЫЙ РЕЖИМ ВЫКЛЮЧЕН", "Вас снова видно!", 3)
+end
+
+-- ========================================================
+-- СИСТЕМА АВТО ФАРМА
+-- ========================================================
+task.spawn(function()
+    while true do
+        task.wait(_G.FarmDelay)
+        
+        if _G.AutoFarm then
+            if not isInGame() then
+                notify("❌ ОШИБКА", "Вы не в игре! Фарм отключен!", 3)
+                _G.AutoFarm = false
+                continue
+            end
+            
+            local char = LocalPlayer.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            
+            if root and hum and hum.Health > 0 then
+                -- Отключаем коллизии для прохождения сквозь стены
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+                
+                local coin = getNearestCoin()
+                if coin then
+                    -- Пытаемся увеличить хитбокс монеты
+                    pcall(function()
+                        if coin:IsA("BasePart") then
+                            coin.Size = Vector3.new(coin.Size.X * 3, coin.Size.Y * 3, coin.Size.Z * 3)
+                            coin.CanCollide = false
+                        end
+                    end)
+                    
+                    if _G.FarmMode == "UnderMap" then
+                        -- Телепортируемся под карту, но близко к монете
+                        root.CFrame = CFrame.new(coin.Position.X, coin.Position.Y - 5, coin.Position.Z)
+                    else
+                        -- Телепортируемся на карту, прямо к монете
+                        root.CFrame = CFrame.new(coin.Position.X, coin.Position.Y + 3, coin.Position.Z)
+                    end
+                    
+                    -- Обнуляем скорость
+                    root.Velocity = Vector3.new(0, 0, 0)
+                end
+            end
+        end
+    end
+end)
+
+-- ========================================================
 -- ИНТЕРФЕЙС
 -- ========================================================
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -388,11 +603,90 @@ VisualTab:CreateColorPicker({
     end,
 })
 
+VisualTab:CreateSection("Фантомный режим")
+
+VisualTab:CreateToggle({
+    Name = "👻 Фантомный призрак",
+    CurrentValue = _G.PhantomMode,
+    Callback = function(Value)
+        _G.PhantomMode = Value
+        if Value then
+            -- Проверяем, идет ли раунд
+            if not isRoundActive() then
+                notify("❌ ОШИБКА", "Раунд еще не начался!", 3)
+                _G.PhantomMode = false
+                return
+            end
+            
+            -- Проверяем, жив ли игрок
+            if not isInGame() then
+                notify("❌ ОШИБКА", "Вы мертвы или не в игре!", 3)
+                _G.PhantomMode = false
+                return
+            end
+            
+            activatePhantomMode()
+        else
+            deactivatePhantomMode()
+        end
+    end,
+})
+
 VisualTab:CreateSection("Информация о ролях")
 VisualTab:CreateLabel("🔴 Красный - Мардер")
 VisualTab:CreateLabel("🔵 Синий - Шериф")
 VisualTab:CreateLabel("🟢 Зеленый - Невинный (настраиваемый)")
 VisualTab:CreateLabel("⚫ Черный - Оружие (настраиваемый)")
+
+-- ========================================================
+-- ВКЛАДКА: ФАРМ
+-- ========================================================
+
+FarmTab:CreateSection("Авто фарм")
+
+FarmTab:CreateToggle({
+    Name = "🪙 Авто фарм монет",
+    CurrentValue = _G.AutoFarm,
+    Callback = function(Value)
+        _G.AutoFarm = Value
+        if Value then
+            if not isInGame() then
+                notify("❌ ОШИБКА", "Вы не в игре!", 3)
+                _G.AutoFarm = false
+                return
+            end
+            notify("🪙 ФАРМ ВКЛЮЧЕН", "Собираю монеты...", 3)
+        else
+            notify("🚫 ФАРМ ВЫКЛЮЧЕН", "Остановлен", 3)
+        end
+    end,
+})
+
+FarmTab:CreateDropdown({
+    Name = "Режим фарма",
+    Options = {"На карте", "Под картой"},
+    CurrentOption = {"На карте"},
+    MultipleOptions = false,
+    Callback = function(Option)
+        if Option[1] == "На карте" then
+            _G.FarmMode = "OnMap"
+        else
+            _G.FarmMode = "UnderMap"
+        end
+        notify("🔄 РЕЖИМ ФАРМА", "Выбран: " .. Option[1], 3)
+    end,
+})
+
+FarmTab:CreateSlider({
+    Name = "Скорость сборки монет",
+    Range = {0.1, 2},
+    Increment = 0.1,
+    Suffix = "сек",
+    CurrentValue = _G.FarmDelay,
+    Callback = function(Value)
+        _G.FarmDelay = Value
+    end,
+})
 
 -- ========================================================
 -- ВКЛАДКА: ПРОЧЕЕ
@@ -428,8 +722,5 @@ MiscTab:CreateSlider({
 -- Заглушки для других вкладок
 CombatTab:CreateSection("Боевые функции")
 CombatTab:CreateLabel("Здесь будут боевые функции")
-
-FarmTab:CreateSection("Фарм функции")
-FarmTab:CreateLabel("Здесь будут функции фарма")
 
 notify("✅ СКРИПТ ЗАГРУЖЕН!", "Базовая версия активирована!", 5)
