@@ -35,7 +35,7 @@ _G.PhantomColor = Color3.fromRGB(255, 105, 180)
 _G.AutoFarm = false
 _G.FarmMode = "OnMap"
 _G.FarmDelay = 0.3
-_G.FarmHeight = -4.5
+_G.FarmHeight = -2.5  -- ИЗМЕНЕНО: было -4.5, теперь -2.5
 
 local originalGravity = Workspace.Gravity
 
@@ -588,13 +588,25 @@ local function forceCollectCoin(coin)
     end)
 end
 
+-- НОВАЯ ФУНКЦИЯ: Плавное перемещение через Tween
+local function tweenToCoin(targetCFrame, duration)
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    local tweenInfo = TweenInfo.new(duration or 0.15, Enum.EasingStyle.Linear)
+    local tween = TweenService:Create(root, tweenInfo, {CFrame = targetCFrame})
+    tween:Play()
+    tween.Completed:Wait()
+end
+
+-- ИЗМЕНЕННЫЙ БЛОК ФАРМА С TWEEN И УМЕНЬШЕННОЙ ГЛУБИНОЙ
 task.spawn(function()
     while true do
         task.wait(_G.FarmDelay)
         
         if _G.AutoFarm then
             if not isInGame() then
-                notify("❌ ОШИБКА", "Вы не в игре! Фарм отключен!", 3)
                 _G.AutoFarm = false
                 disableFarmPhysics()
                 continue
@@ -611,17 +623,18 @@ task.spawn(function()
                 if coin then
                     local targetPos
                     if _G.FarmMode == "UnderMap" then
-                        -- Ставим персонажа глубоко под карту (без вылезания головы)
-                        targetPos = Vector3.new(coin.Position.X, coin.Position.Y + _G.FarmHeight, coin.Position.Z)
+                        -- Минимальный сдвиг под пол (-2.5 вместо -4.5)
+                        targetPos = coin.Position + Vector3.new(0, -2.5, 0)
                     else
-                        targetPos = Vector3.new(coin.Position.X, coin.Position.Y + 1.5, coin.Position.Z)
+                        targetPos = coin.Position + Vector3.new(0, 1.5, 0)
                     end
                     
-                    root.CFrame = CFrame.new(targetPos)
+                    -- Плавное смещение через Tween вместо резкого CFrame
+                    tweenToCoin(CFrame.new(targetPos), 0.12)
+                    
                     root.AssemblyLinearVelocity = Vector3.zero
                     root.AssemblyAngularVelocity = Vector3.zero
                     
-                    -- Вызываем серверную сборку
                     forceCollectCoin(coin)
                 end
             end
@@ -729,7 +742,9 @@ end
 -- ========================================================
 -- ИНТЕРФЕЙС
 -- ========================================================
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Rayfield = loadstring(game:GetHttp
+
+('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
     Name = "MM2 Ultimate Hub",
@@ -896,7 +911,7 @@ FarmTab:CreateSlider({
     Range = {-15, 15},
     Increment = 0.2,
     Suffix = " блоков",
-    CurrentValue = -4.5,
+    CurrentValue = -2.5,  -- ИЗМЕНЕНО: было -4.5
     Callback = function(Value)
         _G.FarmHeight = Value
         notify("📏 ВЫСОТА", "Высота настроена: " .. Value .. " блоков", 2)
@@ -931,4 +946,4 @@ MiscTab:CreateSlider({
     end,
 })
 
-notify("✅ СКРИПТ ОБНОВЛЕН!", "Исправлен сбор монет из-под карты", 5)
+notify("✅ СКРИПТ ОБНОВЛЕН!", "Подпольный фарм исправлен и оптимизирован", 5)
