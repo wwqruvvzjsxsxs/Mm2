@@ -597,7 +597,9 @@ local function tweenToCoin(targetCFrame, duration)
     tween.Completed:Wait()
 end
 
--- Цикл фарминга
+-- ========================================================
+-- АГРЕССИВНЫЙ ЦИКЛ ФАРМА (ДЛЯ DELTA)
+-- ========================================================
 task.spawn(function()
     while true do
         task.wait(_G.FarmDelay)
@@ -611,6 +613,7 @@ task.spawn(function()
             
             local char = LocalPlayer.Character
             local root = char and char:FindFirstChild("HumanoidRootPart")
+            local head = char and char:FindFirstChild("Head")
             local hum = char and char:FindFirstChildOfClass("Humanoid")
             
             if root and hum and hum.Health > 0 then
@@ -620,18 +623,29 @@ task.spawn(function()
                 if coin then
                     local targetPos
                     if _G.FarmMode == "UnderMap" then
-                        -- Смещение строго на глубину _G.FarmHeight (персонаж полностью под картой)
                         targetPos = coin.Position + Vector3.new(0, _G.FarmHeight, 0)
                     else
                         targetPos = coin.Position + Vector3.new(0, 1.5, 0)
                     end
                     
-                    tweenToCoin(CFrame.new(targetPos), 0.12)
-                    
+                    -- Жесткий телепорт без всяких плавностей
+                    root.CFrame = CFrame.new(targetPos)
                     root.AssemblyLinearVelocity = Vector3.zero
                     root.AssemblyAngularVelocity = Vector3.zero
                     
-                    forceCollectCoin(coin)
+                    -- Спам касаниями для пробития защиты сервера
+                    pcall(function()
+                        if firetouchinterest then
+                            -- Касание торсом
+                            firetouchinterest(root, coin, 0)
+                            firetouchinterest(root, coin, 1)
+                            -- Касание головой (сервер часто требует именно её)
+                            if head then
+                                firetouchinterest(head, coin, 0)
+                                firetouchinterest(head, coin, 1)
+                            end
+                        end
+                    end)
                 end
             end
         else
@@ -942,4 +956,3 @@ MiscTab:CreateSlider({
 })
 
 notify("✅ СКРИПТ ОБНОВЛЕН!", "Подпольный фарм исправлен и оптимизирован", 5)
-
