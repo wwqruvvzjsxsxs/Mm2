@@ -1,5 +1,5 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - НОВАЯ ВЕРСИЯ
+-- MM2 ULTIMATE HUB - ТОЧНАЯ НАСТРОЙКА ФАРМА (ШАГ 0.2)
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -21,21 +21,21 @@ local function notify(title, text, duration)
     end)
 end
 
--- Настройки
-_G.ESPEnabled = true
-_G.InnocentColor = Color3.fromRGB(0, 255, 0) -- Зеленый по умолчанию
-_G.MurdererColor = Color3.fromRGB(255, 0, 0) -- Красный (строго)
-_G.SheriffColor = Color3.fromRGB(0, 0, 255) -- Синий (строго)
-_G.GunESP = true -- Подсветка оружия
-_G.GunColor = Color3.fromRGB(0, 0, 0) -- Черный цвет для оружия
+-- Настройки (ВСЕ ФУНКЦИИ ВЫКЛЮЧЕНЫ ПРИ ЗАПУСКЕ)
+_G.ESPEnabled = false
+_G.InnocentColor = Color3.fromRGB(0, 255, 0)
+_G.MurdererColor = Color3.fromRGB(255, 0, 0)
+_G.SheriffColor = Color3.fromRGB(0, 0, 255)
+_G.GunESP = false
+_G.GunColor = Color3.fromRGB(0, 0, 0)
 _G.FlyEnabled = false
 _G.FlySpeed = 50
-_G.PhantomMode = false -- Фантомный призрак
-_G.PhantomColor = Color3.fromRGB(255, 105, 180) -- Розовый цвет для себя
-_G.AutoFarm = false -- Авто фарм
-_G.FarmMode = "OnMap" -- Режим фарма: "OnMap" или "UnderMap"
-_G.FarmDelay = 0.5 -- Задержка между телепортациями
-_G.FarmHeight = -3 -- По умолчанию под картой
+_G.PhantomMode = false
+_G.PhantomColor = Color3.fromRGB(255, 105, 180)
+_G.AutoFarm = false
+_G.FarmMode = "OnMap"
+_G.FarmDelay = 0.5
+_G.FarmHeight = -3
 
 -- Определение роли
 local function getMM2Role(player)
@@ -164,19 +164,17 @@ local function updatePlayerESP(player)
 end
 
 -- ========================================================
--- ESP СИСТЕМА (ОРУЖИЕ) - ИСПРАВЛЕННАЯ
+-- ESP СИСТЕМА (ОРУЖИЕ)
 -- ========================================================
 local activeGunHighlights = {}
 
 local function isGunObject(obj)
     local name = obj.Name:lower()
     
-    -- Более точные проверки для оружия
     if name == "gun" or name == "pistol" or name == "пистолет" then
         return true
     end
     
-    -- Проверяем, является ли объект Tool с оружейным именем
     if obj:IsA("Tool") and (name:find("gun") or name:find("pistol") or name:find("пистолет")) then
         return true
     end
@@ -187,11 +185,9 @@ end
 local function findGuns()
     local guns = {}
     
-    -- Ищем только настоящие пистолеты (Tools)
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("Tool") then
             if isGunObject(obj) then
-                -- Проверяем, что оружие не у игрока в руках
                 local parent = obj.Parent
                 local isInCharacter = false
                 
@@ -210,15 +206,12 @@ local function findGuns()
         end
     end
     
-    -- Если не нашли Tools, ищем части с именем пистолета
     if #guns == 0 then
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if obj:IsA("BasePart") or obj:IsA("MeshPart") then
                 local name = obj.Name:lower()
-                -- Ищем только конкретные части пистолета, не карту
                 if name == "gun" or name == "pistol" or name == "пистолет" or 
                    name == "gunhandle" or name == "gunbarrel" or name == "gunbody" then
-                    -- Проверяем, что это не часть персонажа
                     local parent = obj.Parent
                     local isInCharacter = false
                     
@@ -242,7 +235,6 @@ local function findGuns()
 end
 
 local function updateGunESP()
-    -- Удаляем старые подсветки
     for gun, highlight in pairs(activeGunHighlights) do
         if highlight and highlight.Parent then
             highlight:Destroy()
@@ -252,7 +244,6 @@ local function updateGunESP()
     
     if not _G.GunESP then return end
     
-    -- Находим и подсвечиваем оружие
     local guns = findGuns()
     for _, gun in ipairs(guns) do
         local highlight = Instance.new("Highlight")
@@ -293,7 +284,7 @@ end)
 Players.PlayerRemoving:Connect(removeHighlight)
 
 -- ========================================================
--- СИСТЕМА ФЛАЯ (МОБИЛЬНАЯ ВЕРСИЯ - НАПРАВЛЕНИЕ ОТ КАМЕРЫ)
+-- СИСТЕМА ФЛАЯ
 -- ========================================================
 local flyBodyVelocity = nil
 local flyBodyGyro = nil
@@ -362,41 +353,31 @@ RunService.RenderStepped:Connect(function()
         local camera = Workspace.CurrentCamera
         if not camera then return end
         
-        -- Получаем полное направление камеры (включая вертикаль)
         local cameraForward = camera.CFrame.LookVector
         local cameraRight = camera.CFrame.RightVector
         
-        -- Получаем ввод с джойстика
         local joyDirection = hum.MoveDirection
-        
-        -- Вычисляем направление движения
         local moveDirection = Vector3.zero
         
-        -- Вперед (джойстик вверх) - летим куда смотрит камера (включая вверх/вниз)
         if joyDirection.Z < 0 then
             moveDirection += cameraForward
-        -- Назад (джойстик вниз) - летим назад от камеры
         elseif joyDirection.Z > 0 then
             moveDirection -= cameraForward
         end
         
-        -- Вправо/влево (стрейф)
         if joyDirection.X > 0 then
             moveDirection += cameraRight
         elseif joyDirection.X < 0 then
             moveDirection -= cameraRight
         end
         
-        -- Если есть движение - нормализуем
         if moveDirection.Magnitude > 0 then
             moveDirection = moveDirection.Unit
             flyBodyVelocity.Velocity = moveDirection * _G.FlySpeed
         else
-            -- Полная фиксация в воздухе
             flyBodyVelocity.Velocity = Vector3.zero
         end
         
-        -- Персонаж смотрит туда же, куда и камера
         flyBodyGyro.CFrame = camera.CFrame
     end
 end)
@@ -409,7 +390,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ========================================================
--- СИСТЕМА ФАНТОМНОГО ПРИЗРАКА (ИСПРАВЛЕННАЯ)
+-- СИСТЕМА ФАНТОМНОГО ПРИЗРАКА
 -- ========================================================
 local phantomLoop = nil
 local selfHighlight = nil
@@ -429,10 +410,7 @@ local function findSheriffOrMurderer()
     end
     
     if #targets == 0 then return nil end
-    
-    -- Выбираем случайного шерифа или мардера
-    local randomIndex = math.random(1, #targets)
-    return targets[randomIndex]
+    return targets[math.random(1, #targets)]
 end
 
 local function teleportToSheriffOrMurderer()
@@ -445,7 +423,6 @@ local function teleportToSheriffOrMurderer()
     local targetHrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not targetHrp then return false end
     
-    -- Телепортируемся рядом с шерифом/мардером
     local offset = Vector3.new(math.random(-3, 3), 2, math.random(-3, 3))
     char.HumanoidRootPart.CFrame = CFrame.new(targetHrp.Position + offset)
     
@@ -456,7 +433,6 @@ local function activatePhantomMode()
     local char = LocalPlayer.Character
     if not char then return end
     
-    -- Телепортируемся к шерифу или мардеру
     local teleported = teleportToSheriffOrMurderer()
     if not teleported then
         notify("❌ ОШИБКА", "Не удалось найти шерифа или мардера!", 3)
@@ -464,20 +440,17 @@ local function activatePhantomMode()
         return
     end
     
-    notify("👻 ФАНТОМНЫЙ РЕЖИМ", "Вы телепортированы! Вас видно, но убить нельзя!", 5)
+    notify("👻 ФАНТОМНЫЙ РЕЖИМ", "Вы телепортированы!", 5)
     
-    -- Запускаем цикл фантомного режима
     phantomLoop = task.spawn(function()
         while _G.PhantomMode and char and char.Parent do
             task.wait(0.1)
             
             local hum = char:FindFirstChildOfClass("Humanoid")
             if hum then
-                -- Делаем персонажа неуязвимым
                 hum.MaxHealth = 999999
                 hum.Health = 999999
                 
-                -- Отключаем коллизии (проходим сквозь стены)
                 for _, part in ipairs(char:GetDescendants()) do
                     if part:IsA("BasePart") then
                         part.CanCollide = false
@@ -486,7 +459,6 @@ local function activatePhantomMode()
                     end
                 end
                 
-                -- Создаем розовую подсветку для себя
                 if not selfHighlight or not selfHighlight.Parent then
                     if selfHighlight then
                         selfHighlight:Destroy()
@@ -515,7 +487,6 @@ local function deactivatePhantomMode()
         phantomLoop = nil
     end
     
-    -- Убираем подсветку
     if selfHighlight then
         selfHighlight:Destroy()
         selfHighlight = nil
@@ -525,12 +496,10 @@ local function deactivatePhantomMode()
     if char then
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum then
-            -- Возвращаем обычное здоровье
             hum.MaxHealth = 100
             hum.Health = 100
         end
         
-        -- Возвращаем коллизии
         for _, part in ipairs(char:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = true
@@ -544,7 +513,7 @@ local function deactivatePhantomMode()
 end
 
 -- ========================================================
--- СИСТЕМА АВТО ФАРМА (ИСПРАВЛЕННАЯ)
+-- СИСТЕМА АВТО ФАРМА
 -- ========================================================
 local farmTween = nil
 local farmBodyVelocity = nil
@@ -575,7 +544,6 @@ local function disableFarmPhysics()
     end
 end
 
--- Поиск дна карты под монетой через Raycast (только для UnderMap)
 local function getUnderMapPosition(coinPos)
     local raycastParams = RaycastParams.new()
     raycastParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -630,7 +598,6 @@ task.spawn(function()
                     expandCoinHitbox(coin)
                     
                     if _G.FarmMode == "UnderMap" then
-                        -- РЕЖИМ "ПОД КАРТОЙ": Плавный Tween + Raycast + Ноуклип
                         for _, part in ipairs(char:GetDescendants()) do
                             if part:IsA("BasePart") then
                                 part.CanCollide = false
@@ -655,9 +622,7 @@ task.spawn(function()
                             end
                         end)
                     else
-                        -- РЕЖИМ "НА КАРТЕ": Полностью старая работающая логика
                         disableFarmPhysics()
-                        
                         local targetY = coin.Position.Y + _G.FarmHeight
                         root.CFrame = CFrame.new(coin.Position.X, targetY, coin.Position.Z)
                         root.Velocity = Vector3.zero
@@ -671,7 +636,7 @@ task.spawn(function()
 end)
 
 -- ========================================================
--- СИСТЕМА УБИЙСТВА ВСЕХ (ДЛЯ МАРДЕРА) - ИСПРАВЛЕННАЯ
+-- СИСТЕМА УБИЙСТВА ВСЕХ
 -- ========================================================
 local function isPlayerInLobby(player)
     local char = player.Character
@@ -680,16 +645,14 @@ local function isPlayerInLobby(player)
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return true end
 
-    -- Ищем спавн лобби для проверки дистанции
     local lobby = Workspace:FindFirstChild("Lobby") or Workspace:FindFirstChild("LobbySpawn")
     if lobby then
         local lobbyPos = lobby:IsA("BasePart") and lobby.Position or (lobby:FindFirstChildWhichIsA("BasePart") and lobby:FindFirstChildWhichIsA("BasePart").Position)
         if lobbyPos and (hrp.Position - lobbyPos).Magnitude < 120 then
-            return true -- Игрок слишком близко к лобби
+            return true
         end
     end
 
-    -- Альтернативная проверка: если на карте есть монеты, а игрок слишком далеко от них (в лобби)
     local coin = getNearestCoin()
     if coin and (hrp.Position - coin.Position).Magnitude > 300 then
         return true
@@ -699,20 +662,17 @@ local function isPlayerInLobby(player)
 end
 
 local function killAll()
-    -- 1. Проверка роли
     if getMM2Role(LocalPlayer) ~= "Murderer" then
         notify("❌ ОШИБКА", "Вы не Мардер!", 3)
         return
     end
     
-    -- 2. Проверка персонажа
     local myChar = LocalPlayer.Character
     if not myChar or not isInGame() then
         notify("❌ ОШИБКА", "Вы не в игре!", 3)
         return
     end
 
-    -- 3. Достаем нож из Backpack
     local backpack = LocalPlayer:FindFirstChild("Backpack")
     local knife = myChar:FindFirstChild("Knife") or (backpack and backpack:FindFirstChild("Knife"))
 
@@ -721,7 +681,6 @@ local function killAll()
         return
     end
 
-    -- Экипируем нож в руки
     if knife.Parent == backpack then
         knife.Parent = myChar
     end
@@ -743,15 +702,10 @@ local function killAll()
             local hum = targetChar:FindFirstChildOfClass("Humanoid")
             local targetHrp = targetChar:FindFirstChild("HumanoidRootPart")
 
-            -- Проверяем: жив ли, не в лобби ли, и является ли Мирным/Шерифом
             if hum and hum.Health > 0 and targetHrp and not isPlayerInLobby(player) then
-                
-                -- Телепортируемся прямо за спину жертве
                 myHrp.CFrame = targetHrp.CFrame * CFrame.new(0, 0, 1)
-                
                 task.wait(0.05)
 
-                -- Симулируем касание ножа (TouchInterest) для гарантированной регистрации на сервере
                 pcall(function()
                     if firetouchinterest then
                         firetouchinterest(knifeHandle, targetHrp, 0)
@@ -764,12 +718,11 @@ local function killAll()
                         end
                     end
                     
-                    -- Активируем взмах ножом
                     knife:Activate()
                 end)
 
                 killedCount = killedCount + 1
-                task.wait(0.12) -- Небольшая задержка, чтобы сервер успел зафиксировать урон
+                task.wait(0.12)
             end
         end
     end
@@ -785,21 +738,17 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Window = Rayfield:CreateWindow({
     Name = "MM2 Ultimate Hub",
     LoadingTitle = "MM2 Script",
-    LoadingSubtitle = "by YourName",
+    LoadingSubtitle = "Loaded via Delta",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
 
--- Создаем вкладки
 local CombatTab = Window:CreateTab("⚔️ Сражение", 4483362458)
 local VisualTab = Window:CreateTab("👁️ Визуализация", 4483362458)
 local FarmTab = Window:CreateTab("🪙 Фарм", 4483362458)
 local MiscTab = Window:CreateTab("🔧 Прочее", 4483362458)
 
--- ========================================================
--- ВКЛАДКА: СРАЖЕНИЕ
--- ========================================================
-
+-- СРАЖЕНИЕ
 CombatTab:CreateSection("Боевые функции")
 
 CombatTab:CreateButton({
@@ -809,13 +758,10 @@ CombatTab:CreateButton({
     end,
 })
 
-CombatTab:CreateLabel("Убивает всех игроков на карте")
+CombatTab:CreateLabel("Убивает игроков только на карте (Мирных и Шерифа)")
 CombatTab:CreateLabel("Работает только если вы Мардер")
 
--- ========================================================
--- ВКЛАДКА: ВИЗУАЛИЗАЦИЯ
--- ========================================================
-
+-- ВИЗУАЛИЗАЦИЯ
 VisualTab:CreateSection("ESP Настройки")
 
 VisualTab:CreateToggle({
@@ -870,14 +816,12 @@ VisualTab:CreateToggle({
     Callback = function(Value)
         _G.PhantomMode = Value
         if Value then
-            -- Проверяем, идет ли раунд
             if not isRoundActive() then
                 notify("❌ ОШИБКА", "Раунд еще не начался!", 3)
                 _G.PhantomMode = false
                 return
             end
             
-            -- Проверяем, жив ли игрок
             if not isInGame() then
                 notify("❌ ОШИБКА", "Вы мертвы или не в игре!", 3)
                 _G.PhantomMode = false
@@ -902,17 +846,7 @@ VisualTab:CreateColorPicker({
     end,
 })
 
-VisualTab:CreateSection("Информация о ролях")
-VisualTab:CreateLabel("🔴 Красный - Мардер")
-VisualTab:CreateLabel("🔵 Синий - Шериф")
-VisualTab:CreateLabel("🟢 Зеленый - Невинный (настраиваемый)")
-VisualTab:CreateLabel("⚫ Черный - Оружие (настраиваемый)")
-VisualTab:CreateLabel("🩷 Розовый - Вы (в фантомном режиме)")
-
--- ========================================================
--- ВКЛАДКА: ФАРМ
--- ========================================================
-
+-- ФАРМ
 FarmTab:CreateSection("Авто фарм")
 
 FarmTab:CreateToggle({
@@ -963,20 +897,17 @@ FarmTab:CreateSlider({
 
 FarmTab:CreateSlider({
     Name = "Высота сбора монет",
-    Range = {-10, 10},
-    Increment = 0.5,
+    Range = {-15, 15},
+    Increment = 0.2,
     Suffix = " блоков",
     CurrentValue = -3,
     Callback = function(Value)
         _G.FarmHeight = Value
-        notify("📏 ВЫСОТА", "Высота: " .. Value .. " от монеты", 2)
+        notify("📏 ВЫСОТА", "Высота настроена: " .. Value .. " блоков", 2)
     end,
 })
 
--- ========================================================
--- ВКЛАДКА: ПРОЧЕЕ
--- ========================================================
-
+-- ПРОЧЕЕ
 MiscTab:CreateSection("Флай")
 
 MiscTab:CreateToggle({
@@ -1004,4 +935,4 @@ MiscTab:CreateSlider({
     end,
 })
 
-notify("✅ СКРИПТ ЗАГРУЖЕН!", "Базовая версия активирована!", 5)
+notify("✅ СКРИПТ ЗАГРУЖЕН!", "Высота настроена с шагом 0.2", 5)
