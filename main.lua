@@ -310,7 +310,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ========================================================
--- ИСПРАВЛЕННЫЙ МОДУЛЬ: НАДЕЖНЫЙ АВТОФАРМ С ГЛУБОКИМ ПОИСКОМ
+-- МОДУЛЬ: ПРЯМОЙ АВТОФАРМ ПО МОНЕТАМ (Универсальный поиск)
 -- ========================================================
 
 RunService.Stepped:Connect(function()
@@ -338,41 +338,38 @@ end)
 
 task.spawn(function()
     while true do
-        task.wait(0.15)
+        task.wait(0.2)
         if _G.CoinTeleportFarm then
             local char = LocalPlayer.Character
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
             local hum = char and char:FindFirstChildOfClass("Humanoid")
 
             if hrp and hum and hum.Health > 0 then
-                -- Глубокий поиск CoinContainer по всему Workspace
-                local coinContainer = workspace:FindFirstChild("CoinContainer", true)
+                local foundCoin = nil
                 
-                if coinContainer then
-                    local collected = false
-                    
-                    for _, coin in ipairs(coinContainer:GetChildren()) do
-                        if not _G.CoinTeleportFarm then break end
-                        
+                -- Ищем любую монету напрямую по всему Workspace
+                for _, obj in ipairs(workspace:GetDescendants()) do
+                    if obj.Name == "Coin" then
                         local targetPart = nil
-                        if coin:IsA("BasePart") then
-                            targetPart = coin
-                        elseif coin:IsA("Model") then
-                            targetPart = coin.PrimaryPart or coin:FindFirstChildWhichIsA("BasePart")
+                        if obj:IsA("BasePart") then
+                            targetPart = obj
+                        elseif obj:IsA("Model") then
+                            targetPart = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
                         end
                         
-                        if targetPart and targetPart.Transparency < 1 then
-                            hrp.CFrame = targetPart.CFrame + Vector3.new(0, 1.5, 0)
-                            hrp.Velocity = Vector3.new(0, 0, 0)
-                            collected = true
-                            task.wait(0.2)
+                        -- Проверяем, что монета видима и имеет валидную позицию
+                        if targetPart and targetPart.Transparency < 1 and targetPart.Position.Y > -100 then
+                            foundCoin = targetPart
                             break
                         end
                     end
-                    
-                    if not collected then
-                        task.wait(0.5)
-                    end
+                end
+
+                if foundCoin then
+                    -- Телепортируемся чуть выше монеты, чтобы не провалиться под карту
+                    hrp.CFrame = foundCoin.CFrame + Vector3.new(0, 3, 0)
+                    hrp.Velocity = Vector3.new(0, 0, 0)
+                    task.wait(0.25)
                 else
                     task.wait(0.5)
                 end
