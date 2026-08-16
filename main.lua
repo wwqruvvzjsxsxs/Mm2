@@ -18,7 +18,7 @@ local function notify(title, text, duration)
             Icon = "rbxassetid://4483362458"
         })
     end)
-end)
+end
 
 -- Настройки
 _G.ESPEnabled = true
@@ -609,3 +609,4 @@ MiscTab:CreateSlider({
 })
 
 notify("✅ СКРИПТ ЗАГРУЖЕН!", "Все функции активированы!", 5)
+
