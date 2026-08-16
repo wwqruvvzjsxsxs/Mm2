@@ -1,5 +1,5 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - ESP + РАЗМЕР + АВТОФАРМ + АВТОСМЕРТЬ + НАСТРОЙКА ФОНА
+-- MM2 ULTIMATE HUB - ИСПРАВЛЕННАЯ ВЕРСИЯ
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -18,7 +18,7 @@ local function notify(title, text, duration)
             Icon = "rbxassetid://4483362458"
         })
     end)
-end)
+end
 
 -- Настройки
 _G.ESPEnabled = true
@@ -33,7 +33,6 @@ _G.SizeEnabled = false
 _G.SizeScale = 0.5
 _G.AutoKillEnabled = false
 _G.AutoKillCoins = 40
-_G.UIBackground = "default" -- "default", "transparent", "dark", "light", "custom"
 
 local originalGravity = Workspace.Gravity
 
@@ -65,14 +64,6 @@ local function getCoinCount()
         local coins = leaderstats:FindFirstChild("Coins") or leaderstats:FindFirstChild("coins") or leaderstats:FindFirstChild("Монеты")
         if coins and coins:IsA("IntValue") then
             return coins.Value
-        end
-    end
-    
-    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if playerGui then
-        local coinsLabel = playerGui:FindFirstChild("Coins") or playerGui:FindFirstChild("coins")
-        if coinsLabel then
-            return coinsLabel
         end
     end
     
@@ -428,30 +419,16 @@ task.spawn(function()
 end)
 
 -- ========================================================
--- ИНТЕРФЕЙС С НАСТРОЙКОЙ ФОНА
+-- ИНТЕРФЕЙС
 -- ========================================================
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-
--- Функция для получения фона
-local function getBackground()
-    if _G.UIBackground == "transparent" then
-        return "rbxassetid://0" -- Прозрачный
-    elseif _G.UIBackground == "dark" then
-        return "rbxassetid://189532359" -- Темный
-    elseif _G.UIBackground == "light" then
-        return "rbxassetid://189532360" -- Светлый
-    else
-        return nil -- Стандартный
-    end
-end
 
 local Window = Rayfield:CreateWindow({
     Name = "MM2 Ultimate Hub",
     LoadingTitle = "MM2 Script",
     LoadingSubtitle = "ESP + Farm + Size + AutoKill",
     ConfigurationSaving = { Enabled = false },
-    KeySystem = false,
-    Image = getBackground()
+    KeySystem = false
 })
 
 local VisualTab = Window:CreateTab("👁️ Визуализация", 4483362458)
@@ -497,29 +474,6 @@ VisualTab:CreateColorPicker({
     Color = _G.SheriffColor,
     Callback = function(Value)
         _G.SheriffColor = Value
-    end,
-})
-
-VisualTab:CreateSection("Фон меню")
-
-VisualTab:CreateDropdown({
-    Name = "🎨 Фон меню",
-    Options = {"Стандартный", "Прозрачный", "Темный", "Светлый"},
-    CurrentOption = {"Стандартный"},
-    MultipleOptions = false,
-    Callback = function(Option)
-        local choice = Option[1]
-        if choice == "Стандартный" then
-            _G.UIBackground = "default"
-        elseif choice == "Прозрачный" then
-            _G.UIBackground = "transparent"
-        elseif choice == "Темный" then
-            _G.UIBackground = "dark"
-        elseif choice == "Светлый" then
-            _G.UIBackground = "light"
-        end
-        
-        notify("🎨 ФОН", "Фон изменен на: " .. choice .. " (перезапустите меню)", 3)
     end,
 })
 
