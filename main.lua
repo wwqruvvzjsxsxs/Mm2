@@ -426,7 +426,7 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Window = Rayfield:CreateWindow({
     Name = "MM2 Ultimate Hub",
     LoadingTitle = "MM2 Script",
-    LoadingSubtitle = "ESP + Farm + Size + AutoKill",
+    LoadingSubtitle = "by YourName",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -609,4 +609,3 @@ MiscTab:CreateSlider({
 })
 
 notify("✅ СКРИПТ ЗАГРУЖЕН!", "Все функции активированы!", 5)
-
