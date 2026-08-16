@@ -1,5 +1,5 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - ESP + РАЗМЕР + АВТОФАРМ + АВТОСМЕРТЬ
+-- MM2 ULTIMATE HUB - С АВТОПЕРЕЗАПУСКОМ ФАРМА
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -7,9 +7,8 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local TweenService = game:GetService("TweenService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 
--- Уведомления (новый стиль)
+-- Уведомления
 local function notify(title, text, duration)
     pcall(function()
         game:GetService("StarterGui"):SetCore("SendNotification", {
@@ -19,13 +18,6 @@ local function notify(title, text, duration)
             Button1 = "OK",
             Icon = "rbxassetid://4483362458"
         })
-    end)
-end
-
--- Дополнительное уведомление в чат
-local function chatNotify(message)
-    pcall(function()
-        game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents"):FindFirstChild("SayMessageRequest"):FireServer("[HUB] " .. message, "All")
     end)
 end
 
@@ -42,6 +34,7 @@ _G.SizeEnabled = false
 _G.SizeScale = 0.5
 _G.AutoKillEnabled = false
 _G.AutoKillCoins = 40
+_G.SafeDistance = 10
 
 local originalGravity = Workspace.Gravity
 
@@ -66,9 +59,34 @@ local function isInGame()
     return hum and hum.Health > 0
 end
 
--- Получение количества монет (расширенное)
+-- Получение позиции мардера
+local function getMurdererPosition()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local role = getMM2Role(player)
+            if role == "Murderer" then
+                local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    return hrp.Position
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- Проверка безопасности позиции
+local function isSafePosition(pos)
+    local murdererPos = getMurdererPosition()
+    if murdererPos then
+        local distance = (pos - murdererPos).Magnitude
+        return distance >= _G.SafeDistance
+    end
+    return true
+end
+
+-- Получение количества монет
 local function getCoinCount()
-    -- Способ 1: leaderstats
     local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
     if leaderstats then
         for _, child in ipairs(leaderstats:GetChildren()) do
@@ -79,38 +97,10 @@ local function getCoinCount()
         end
     end
     
-    -- Способ 2: PlayerGui
-    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if playerGui then
-        for _, gui in ipairs(playerGui:GetDescendants()) do
-            if gui:IsA("TextLabel") or gui:IsA("TextButton") then
-                local text = gui.Text:lower()
-                if text:find("coin") or text:find("монет") then
-                    local number = tonumber(text:match("%d+"))
-                    if number then
-                        return number
-                    end
-                end
-            end
-        end
-    end
-    
-    -- Способ 3: Backpack
-    local backpack = LocalPlayer:FindFirstChild("Backpack")
-    if backpack then
-        local coinCount = 0
-        for _, item in ipairs(backpack:GetChildren()) do
-            if item.Name:lower():find("coin") then
-                coinCount = coinCount + 1
-            end
-        end
-        return coinCount
-    end
-    
     return 0
 end
 
--- Убить себя (несколько способов)
+-- Убить себя
 local function killSelf()
     local char = LocalPlayer.Character
     if not char then return false end
@@ -118,22 +108,9 @@ local function killSelf()
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum then return false end
     
-    -- Способ 1: Прямое убийство
     hum.Health = 0
     
-    -- Способ 2: Если не сработало, пробуем через Fire
     task.wait(0.5)
-    if hum.Health > 0 then
-        pcall(function()
-            local fire = Instance.new("Fire")
-            fire.Parent = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-            task.wait(1)
-            fire:Destroy()
-        end)
-    end
-    
-    -- Способ 3: Через respawn
-    task.wait(1)
     if hum.Health > 0 then
         pcall(function()
             hum:ChangeState(Enum.HumanoidStateType.Dead)
@@ -157,15 +134,24 @@ local function findAllCoins()
     return coins
 end
 
-local function getNearestCoin()
+-- Поиск ближайшей безопасной монеты
+local function getNearestSafeCoin()
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
     local root = char.HumanoidRootPart
 
     local nearestCoin = nil
     local minDistance = 999999
+    local murdererPos = getMurdererPosition()
 
     for _, coin in ipairs(findAllCoins()) do
+        if murdererPos then
+            local distanceToMurderer = (coin.Position - murdererPos).Magnitude
+            if distanceToMurderer < _G.SafeDistance then
+                continue
+            end
+        end
+        
         local dist = (root.Position - coin.Position).Magnitude
         if dist < minDistance then
             minDistance = dist
@@ -263,15 +249,6 @@ task.spawn(function()
     end
 end)
 
--- Применяем размер при возрождении
-LocalPlayer.CharacterAdded:Connect(function(char)
-    if _G.SizeEnabled then
-        task.wait(1)
-        saveOriginalSizes(char)
-        applySizeScale(char, _G.SizeScale)
-    end
-end)
-
 -- ========================================================
 -- ESP СИСТЕМА (ИГРОКИ)
 -- ========================================================
@@ -346,10 +323,13 @@ end)
 Players.PlayerRemoving:Connect(removeHighlight)
 
 -- ========================================================
--- СИСТЕМА АВТО ФАРМА С АВТОКИЛЛОМ
+-- СИСТЕМА АВТО ФАРМА
 -- ========================================================
 local farmTween = nil
 local farmBodyVelocity = nil
+local lastTeleportTime = 0
+local teleportCount = 0
+local farmActive = false -- Флаг активности фарма
 
 local function enableUnderMapPhysics()
     local char = LocalPlayer.Character
@@ -412,80 +392,112 @@ end
 -- Отдельный мониторинг автокилла
 task.spawn(function()
     while true do
-        task.wait(1) -- Проверяем каждую секунду
+        task.wait(1)
         
         if _G.AutoKillEnabled and _G.AutoFarm then
             local coinCount = getCoinCount()
             
             if coinCount >= _G.AutoKillCoins then
-                notify("💀 АВТОКИЛЛ АКТИВИРОВАН", "Собрано " .. coinCount .. " монет! Умираю...", 5)
-                chatNotify("💀 Автокилл: собрано " .. coinCount .. " монет! Умираю...")
-                
+                notify("💀 АВТОКИЛЛ", "Собрано " .. coinCount .. " монет! Умираю...", 5)
                 killSelf()
-                
-                task.wait(3) -- Ждем возрождения
+                task.wait(3)
             end
         end
     end
 end)
 
+-- Главный цикл фарма
 task.spawn(function()
     while true do
-        task.wait(_G.FarmDelay)
+        task.wait(0.5) -- Постоянная проверка
         
         if _G.AutoFarm then
-            if not isInGame() then
-                notify("❌ ОШИБКА", "Вы не в игре! Фарм отключен!", 3)
-                _G.AutoFarm = false
-                disableFarmPhysics()
-                continue
-            end
-            
-            local char = LocalPlayer.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            
-            if root and hum and hum.Health > 0 then
-                local coin = getNearestCoin()
-                if coin then
-                    expandCoinHitbox(coin)
+            if isInGame() then
+                -- Мы в игре, фармим
+                farmActive = true
+                
+                local char = LocalPlayer.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                
+                if root and hum and hum.Health > 0 then
+                    local coin = getNearestSafeCoin()
                     
-                    if _G.FarmMode == "UnderMap" then
-                        for _, part in ipairs(char:GetDescendants()) do
-                            if part:IsA("BasePart") then
-                                part.CanCollide = false
+                    if coin and isSafePosition(coin.Position) then
+                        expandCoinHitbox(coin)
+                        
+                        lastTeleportTime = tick()
+                        
+                        if _G.FarmMode == "UnderMap" then
+                            for _, part in ipairs(char:GetDescendants()) do
+                                if part:IsA("BasePart") then
+                                    part.CanCollide = false
+                                end
                             end
+                            
+                            enableUnderMapPhysics()
+                            
+                            local targetPos = getUnderMapPosition(coin.Position)
+                            local distance = (root.Position - targetPos).Magnitude
+                            local speed = 30
+                            local tweenTime = math.clamp(distance / speed, 0.1, _G.FarmDelay)
+                            
+                            farmTween = TweenService:Create(root, TweenInfo.new(tweenTime, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
+                            farmTween:Play()
+                            farmTween.Completed:Wait()
+                            
+                            pcall(function()
+                                if firetouchinterest then
+                                    firetouchinterest(root, coin, 0)
+                                    firetouchinterest(root, coin, 1)
+                                end
+                            end)
+                        else
+                            disableFarmPhysics()
+                            
+                            local targetY = coin.Position.Y + _G.FarmHeight
+                            root.CFrame = CFrame.new(coin.Position.X, targetY, coin.Position.Z)
+                            root.Velocity = Vector3.zero
                         end
                         
-                        enableUnderMapPhysics()
-                        
-                        local targetPos = getUnderMapPosition(coin.Position)
-                        local distance = (root.Position - targetPos).Magnitude
-                        local speed = 40 
-                        local tweenTime = math.clamp(distance / speed, 0.05, _G.FarmDelay)
-                        
-                        farmTween = TweenService:Create(root, TweenInfo.new(tweenTime, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
-                        farmTween:Play()
-                        farmTween.Completed:Wait()
-                        
-                        pcall(function()
-                            if firetouchinterest then
-                                firetouchinterest(root, coin, 0)
-                                firetouchinterest(root, coin, 1)
-                            end
-                        end)
+                        task.wait(_G.FarmDelay)
                     else
-                        disableFarmPhysics()
-                        
-                        local targetY = coin.Position.Y + _G.FarmHeight
-                        root.CFrame = CFrame.new(coin.Position.X, targetY, coin.Position.Z)
-                        root.Velocity = Vector3.zero
+                        task.wait(0.5)
                     end
                 end
+            else
+                -- Мы не в игре, но фарм должен остаться включенным
+                if farmActive then
+                    farmActive = false
+                    disableFarmPhysics()
+                    notify("⏸️ ФАРМ НА ПАУЗЕ", "Ожидание следующего раунда...", 3)
+                end
+                task.wait(1)
             end
         else
-            disableFarmPhysics()
+            if farmActive then
+                farmActive = false
+                disableFarmPhysics()
+            end
+            task.wait(0.5)
         end
+    end
+end)
+
+-- Автоматический перезапуск при возрождении
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(1)
+    
+    -- Применяем размер если нужно
+    if _G.SizeEnabled then
+        saveOriginalSizes(char)
+        applySizeScale(char, _G.SizeScale)
+    end
+    
+    -- Если фарм был включен, он автоматически продолжит работу
+    if _G.AutoFarm then
+        farmActive = false
+        notify("🪙 ФАРМ ПЕРЕЗАПУЩЕН", "Продолжаю сбор монет...", 3)
     end
 end)
 
@@ -497,7 +509,7 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Window = Rayfield:CreateWindow({
     Name = "MM2 Ultimate Hub",
     LoadingTitle = "MM2 Script",
-    LoadingSubtitle = "by YourName",
+    LoadingSubtitle = "ESP + Farm + Size + AutoKill",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -558,14 +570,14 @@ FarmTab:CreateToggle({
         _G.AutoFarm = Value
         if Value then
             if not isInGame() then
-                notify("❌ ОШИБКА", "Вы не в игре!", 3)
-                _G.AutoFarm = false
-                return
+                notify("⏳ ФАРМ ВКЛЮЧЕН", "Начнется когда вы зайдете в раунд", 3)
+            else
+                notify("🪙 ФАРМ ВКЛЮЧЕН", "Собираю монеты...", 3)
             end
-            notify("🪙 ФАРМ ВКЛЮЧЕН", "Собираю монеты...", 3)
         else
-            notify("🚫 ФАРМ ВЫКЛЮЧЕН", "Остановлен", 3)
+            farmActive = false
             disableFarmPhysics()
+            notify("🚫 ФАРМ ВЫКЛЮЧЕН", "Остановлен", 3)
         end
     end,
 })
@@ -588,7 +600,7 @@ FarmTab:CreateDropdown({
 
 FarmTab:CreateSlider({
     Name = "Скорость сборки монет",
-    Range = {0.1, 2},
+    Range = {0.5, 3},
     Increment = 0.1,
     Suffix = "сек",
     CurrentValue = _G.FarmDelay,
@@ -605,7 +617,18 @@ FarmTab:CreateSlider({
     CurrentValue = -2.5,
     Callback = function(Value)
         _G.FarmHeight = Value
-        notify("📏 ВЫСОТА", "Высота: " .. Value .. " от монеты", 2)
+    end,
+})
+
+FarmTab:CreateSlider({
+    Name = "Безопасная дистанция от мардера",
+    Range = {5, 30},
+    Increment = 1,
+    Suffix = " блоков",
+    CurrentValue = 10,
+    Callback = function(Value)
+        _G.SafeDistance = Value
+        notify("🛡️ ЗАЩИТА", "Дистанция от мардера: " .. Value .. " блоков", 2)
     end,
 })
 
@@ -632,7 +655,6 @@ FarmTab:CreateSlider({
     CurrentValue = _G.AutoKillCoins,
     Callback = function(Value)
         _G.AutoKillCoins = Value
-        notify("💀 НАСТРОЙКА", "Смерть при " .. Value .. " монетах", 2)
     end,
 })
 
