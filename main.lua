@@ -7,16 +7,25 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local TweenService = game:GetService("TweenService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
--- Уведомления
+-- Уведомления (новый стиль)
 local function notify(title, text, duration)
     pcall(function()
         game:GetService("StarterGui"):SetCore("SendNotification", {
             Title = title,
             Text = text,
             Duration = duration or 5,
+            Button1 = "OK",
             Icon = "rbxassetid://4483362458"
         })
+    end)
+end
+
+-- Дополнительное уведомление в чат
+local function chatNotify(message)
+    pcall(function()
+        game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents"):FindFirstChild("SayMessageRequest"):FireServer("[HUB] " .. message, "All")
     end)
 end
 
@@ -57,20 +66,51 @@ local function isInGame()
     return hum and hum.Health > 0
 end
 
--- Получение количества монет
+-- Получение количества монет (расширенное)
 local function getCoinCount()
+    -- Способ 1: leaderstats
     local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
     if leaderstats then
-        local coins = leaderstats:FindFirstChild("Coins") or leaderstats:FindFirstChild("coins") or leaderstats:FindFirstChild("Монеты")
-        if coins and coins:IsA("IntValue") then
-            return coins.Value
+        for _, child in ipairs(leaderstats:GetChildren()) do
+            local name = child.Name:lower()
+            if (name:find("coin") or name:find("монет") or name:find("cash") or name:find("money")) and child:IsA("IntValue") then
+                return child.Value
+            end
         end
+    end
+    
+    -- Способ 2: PlayerGui
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if playerGui then
+        for _, gui in ipairs(playerGui:GetDescendants()) do
+            if gui:IsA("TextLabel") or gui:IsA("TextButton") then
+                local text = gui.Text:lower()
+                if text:find("coin") or text:find("монет") then
+                    local number = tonumber(text:match("%d+"))
+                    if number then
+                        return number
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Способ 3: Backpack
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack then
+        local coinCount = 0
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item.Name:lower():find("coin") then
+                coinCount = coinCount + 1
+            end
+        end
+        return coinCount
     end
     
     return 0
 end
 
--- Убить себя
+-- Убить себя (несколько способов)
 local function killSelf()
     local char = LocalPlayer.Character
     if not char then return false end
@@ -78,7 +118,28 @@ local function killSelf()
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum then return false end
     
+    -- Способ 1: Прямое убийство
     hum.Health = 0
+    
+    -- Способ 2: Если не сработало, пробуем через Fire
+    task.wait(0.5)
+    if hum.Health > 0 then
+        pcall(function()
+            local fire = Instance.new("Fire")
+            fire.Parent = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+            task.wait(1)
+            fire:Destroy()
+        end)
+    end
+    
+    -- Способ 3: Через respawn
+    task.wait(1)
+    if hum.Health > 0 then
+        pcall(function()
+            hum:ChangeState(Enum.HumanoidStateType.Dead)
+        end)
+    end
+    
     return true
 end
 
@@ -285,7 +346,7 @@ end)
 Players.PlayerRemoving:Connect(removeHighlight)
 
 -- ========================================================
--- СИСТЕМА АВТО ФАРМА
+-- СИСТЕМА АВТО ФАРМА С АВТОКИЛЛОМ
 -- ========================================================
 local farmTween = nil
 local farmBodyVelocity = nil
@@ -348,6 +409,26 @@ local function expandCoinHitbox(coin)
     end)
 end
 
+-- Отдельный мониторинг автокилла
+task.spawn(function()
+    while true do
+        task.wait(1) -- Проверяем каждую секунду
+        
+        if _G.AutoKillEnabled and _G.AutoFarm then
+            local coinCount = getCoinCount()
+            
+            if coinCount >= _G.AutoKillCoins then
+                notify("💀 АВТОКИЛЛ АКТИВИРОВАН", "Собрано " .. coinCount .. " монет! Умираю...", 5)
+                chatNotify("💀 Автокилл: собрано " .. coinCount .. " монет! Умираю...")
+                
+                killSelf()
+                
+                task.wait(3) -- Ждем возрождения
+            end
+        end
+    end
+end)
+
 task.spawn(function()
     while true do
         task.wait(_G.FarmDelay)
@@ -358,16 +439,6 @@ task.spawn(function()
                 _G.AutoFarm = false
                 disableFarmPhysics()
                 continue
-            end
-            
-            -- Проверяем автокилл
-            if _G.AutoKillEnabled then
-                local coinCount = getCoinCount()
-                if coinCount >= _G.AutoKillCoins then
-                    notify("💀 АВТОКИЛЛ", "Собрано " .. coinCount .. " монет! Умираю...", 3)
-                    killSelf()
-                    task.wait(2)
-                end
             end
             
             local char = LocalPlayer.Character
