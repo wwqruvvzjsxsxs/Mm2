@@ -1,5 +1,5 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - С АВТОПЕРЕЗАПУСКОМ ФАРМА
+-- MM2 ULTIMATE HUB - ESP + АВТОФАРМ + АВТОСМЕРТЬ + НЕУЯЗВИМОСТЬ
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -30,11 +30,10 @@ _G.AutoFarm = false
 _G.FarmMode = "OnMap"
 _G.FarmDelay = 0.5
 _G.FarmHeight = -2.5
-_G.SizeEnabled = false
-_G.SizeScale = 0.5
 _G.AutoKillEnabled = false
 _G.AutoKillCoins = 40
 _G.SafeDistance = 10
+_G.GodMode = false
 
 local originalGravity = Workspace.Gravity
 
@@ -67,12 +66,12 @@ local function getMurdererPosition()
             if role == "Murderer" then
                 local hrp = player.Character:FindFirstChild("HumanoidRootPart")
                 if hrp then
-                    return hrp.Position
+                    return hrp.Position, player
                 end
             end
         end
     end
-    return nil
+    return nil, nil
 end
 
 -- Проверка безопасности позиции
@@ -97,10 +96,26 @@ local function getCoinCount()
         end
     end
     
+    -- Альтернативный способ
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if playerGui then
+        for _, gui in ipairs(playerGui:GetDescendants()) do
+            if gui:IsA("TextLabel") or gui:IsA("TextButton") then
+                local text = gui.Text:lower()
+                if text:find("coin") or text:find("монет") then
+                    local number = tonumber(text:match("%d+"))
+                    if number then
+                        return number
+                    end
+                end
+            end
+        end
+    end
+    
     return 0
 end
 
--- Убить себя
+-- Убить себя через респавн
 local function killSelf()
     local char = LocalPlayer.Character
     if not char then return false end
@@ -108,12 +123,30 @@ local function killSelf()
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum then return false end
     
+    -- Способ 1: Прямое убийство через Health
     hum.Health = 0
     
+    -- Способ 2: Если не сработало, используем BreakJoints
+    task.wait(0.3)
+    if hum.Health > 0 then
+        pcall(function()
+            hum:BreakJoints()
+        end)
+    end
+    
+    -- Способ 3: Принудительный респавн
     task.wait(0.5)
     if hum.Health > 0 then
         pcall(function()
             hum:ChangeState(Enum.HumanoidStateType.Dead)
+        end)
+    end
+    
+    -- Способ 4: Уничтожение персонажа
+    task.wait(0.5)
+    if char and char.Parent then
+        pcall(function()
+            char:Destroy()
         end)
     end
     
@@ -163,89 +196,62 @@ local function getNearestSafeCoin()
 end
 
 -- ========================================================
--- СИСТЕМА ИЗМЕНЕНИЯ РАЗМЕРА
+-- СИСТЕМА НЕУЯЗВИМОСТИ (GOD MODE)
 -- ========================================================
-local originalSizes = {}
-
-local function saveOriginalSizes(char)
-    originalSizes = {}
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") or part:IsA("MeshPart") then
-            originalSizes[part] = {
-                Size = part.Size
-            }
-        end
-    end
-end
-
-local function applySizeScale(char, scale)
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    local rootPart = char:FindFirstChild("HumanoidRootPart")
+local function enableGodMode()
+    local char = LocalPlayer.Character
+    if not char then return end
     
-    if not humanoid or not rootPart then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
     
-    humanoid.HipHeight = 2 * scale
+    hum.MaxHealth = 999999
+    hum.Health = 999999
     
     for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") and part ~= rootPart then
-            if not originalSizes[part] then
-                originalSizes[part] = { Size = part.Size }
-            end
-            local originalSize = originalSizes[part].Size
-            part.Size = Vector3.new(
-                originalSize.X * scale,
-                originalSize.Y * scale,
-                originalSize.Z * scale
-            )
-        elseif part:IsA("MeshPart") then
-            if not originalSizes[part] then
-                originalSizes[part] = { Size = part.Size }
-            end
-            local originalSize = originalSizes[part].Size
-            part.Size = Vector3.new(
-                originalSize.X * scale,
-                originalSize.Y * scale,
-                originalSize.Z * scale
-            )
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            part.CanTouch = false
         end
     end
     
-    if not originalSizes[rootPart] then
-        originalSizes[rootPart] = { Size = rootPart.Size }
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.CanTouch = true
     end
-    local rootOriginalSize = originalSizes[rootPart].Size
-    rootPart.Size = Vector3.new(
-        rootOriginalSize.X * scale,
-        rootOriginalSize.Y * scale,
-        rootOriginalSize.Z * scale
-    )
 end
 
-local function restoreOriginalSize(char)
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    if humanoid then
-        humanoid.HipHeight = 2
-    end
+local function disableGodMode()
+    local char = LocalPlayer.Character
+    if not char then return end
     
-    for part, data in pairs(originalSizes) do
-        if part and part.Parent then
-            part.Size = data.Size
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    
+    hum.MaxHealth = 100
+    hum.Health = 100
+    
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanTouch = true
         end
     end
-    
-    originalSizes = {}
 end
 
--- Мониторинг размера
+-- Мониторинг God Mode
 task.spawn(function()
     while true do
         task.wait(0.5)
-        if _G.SizeEnabled then
-            local char = LocalPlayer.Character
-            if char then
-                applySizeScale(char, _G.SizeScale)
-            end
+        if _G.GodMode then
+            enableGodMode()
         end
+    end
+end)
+
+-- Применяем God Mode при возрождении
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(0.5)
+    if _G.GodMode then
+        enableGodMode()
     end
 end)
 
@@ -327,9 +333,7 @@ Players.PlayerRemoving:Connect(removeHighlight)
 -- ========================================================
 local farmTween = nil
 local farmBodyVelocity = nil
-local lastTeleportTime = 0
-local teleportCount = 0
-local farmActive = false -- Флаг активности фарма
+local farmActive = false
 
 local function enableUnderMapPhysics()
     local char = LocalPlayer.Character
@@ -389,7 +393,7 @@ local function expandCoinHitbox(coin)
     end)
 end
 
--- Отдельный мониторинг автокилла
+-- Отдельный мониторинг автокилла (проверка каждую секунду)
 task.spawn(function()
     while true do
         task.wait(1)
@@ -397,10 +401,10 @@ task.spawn(function()
         if _G.AutoKillEnabled and _G.AutoFarm then
             local coinCount = getCoinCount()
             
-            if coinCount >= _G.AutoKillCoins then
+            if coinCount >= _G.AutoKillCoins and coinCount > 0 then
                 notify("💀 АВТОКИЛЛ", "Собрано " .. coinCount .. " монет! Умираю...", 5)
                 killSelf()
-                task.wait(3)
+                task.wait(5) -- Ждем возрождения
             end
         end
     end
@@ -409,11 +413,10 @@ end)
 -- Главный цикл фарма
 task.spawn(function()
     while true do
-        task.wait(0.5) -- Постоянная проверка
+        task.wait(0.5)
         
         if _G.AutoFarm then
             if isInGame() then
-                -- Мы в игре, фармим
                 farmActive = true
                 
                 local char = LocalPlayer.Character
@@ -426,11 +429,9 @@ task.spawn(function()
                     if coin and isSafePosition(coin.Position) then
                         expandCoinHitbox(coin)
                         
-                        lastTeleportTime = tick()
-                        
                         if _G.FarmMode == "UnderMap" then
                             for _, part in ipairs(char:GetDescendants()) do
-                                if part:IsA("BasePart") then
+                                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
                                     part.CanCollide = false
                                 end
                             end
@@ -466,11 +467,9 @@ task.spawn(function()
                     end
                 end
             else
-                -- Мы не в игре, но фарм должен остаться включенным
                 if farmActive then
                     farmActive = false
                     disableFarmPhysics()
-                    notify("⏸️ ФАРМ НА ПАУЗЕ", "Ожидание следующего раунда...", 3)
                 end
                 task.wait(1)
             end
@@ -488,13 +487,10 @@ end)
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(1)
     
-    -- Применяем размер если нужно
-    if _G.SizeEnabled then
-        saveOriginalSizes(char)
-        applySizeScale(char, _G.SizeScale)
+    if _G.GodMode then
+        enableGodMode()
     end
     
-    -- Если фарм был включен, он автоматически продолжит работу
     if _G.AutoFarm then
         farmActive = false
         notify("🪙 ФАРМ ПЕРЕЗАПУЩЕН", "Продолжаю сбор монет...", 3)
@@ -509,7 +505,7 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Window = Rayfield:CreateWindow({
     Name = "MM2 Ultimate Hub",
     LoadingTitle = "MM2 Script",
-    LoadingSubtitle = "ESP + Farm + Size + AutoKill",
+    LoadingSubtitle = "ESP + Farm + GodMode + AutoKill",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -526,11 +522,7 @@ VisualTab:CreateToggle({
     CurrentValue = _G.ESPEnabled,
     Callback = function(Value)
         _G.ESPEnabled = Value
-        if Value then
-            notify("👁️ ESP ВКЛЮЧЕН", "Игроки подсвечиваются сквозь стены", 3)
-        else
-            notify("🚫 ESP ВЫКЛЮЧЕН", "Подсветка отключена", 3)
-        end
+        notify(Value and "👁️ ESP ВКЛЮЧЕН" or "🚫 ESP ВЫКЛЮЧЕН", "", 3)
     end,
 })
 
@@ -628,7 +620,6 @@ FarmTab:CreateSlider({
     CurrentValue = 10,
     Callback = function(Value)
         _G.SafeDistance = Value
-        notify("🛡️ ЗАЩИТА", "Дистанция от мардера: " .. Value .. " блоков", 2)
     end,
 })
 
@@ -655,48 +646,24 @@ FarmTab:CreateSlider({
     CurrentValue = _G.AutoKillCoins,
     Callback = function(Value)
         _G.AutoKillCoins = Value
+        notify("💀 НАСТРОЙКА", "Смерть при " .. Value .. " монетах", 2)
     end,
 })
 
 -- ВКЛАДКА: ПРОЧЕЕ
-MiscTab:CreateSection("Изменение размера")
+MiscTab:CreateSection("Неуязвимость")
 
 MiscTab:CreateToggle({
-    Name = "📏 Уменьшить персонажа",
-    CurrentValue = _G.SizeEnabled,
+    Name = "🛡️ Неуязвимость (God Mode)",
+    CurrentValue = _G.GodMode,
     Callback = function(Value)
-        _G.SizeEnabled = Value
-        local char = LocalPlayer.Character
-        
+        _G.GodMode = Value
         if Value then
-            if char then
-                saveOriginalSizes(char)
-                applySizeScale(char, _G.SizeScale)
-                notify("📏 РАЗМЕР ИЗМЕНЕН", "Вы уменьшены до " .. (_G.SizeScale * 100) .. "%", 3)
-            end
+            enableGodMode()
+            notify("🛡️ GOD MODE ВКЛЮЧЕН", "Мардер не сможет вас убить!", 3)
         else
-            if char then
-                restoreOriginalSize(char)
-                notify("📏 РАЗМЕР ВОССТАНОВЛЕН", "Вы снова нормального размера", 3)
-            end
-        end
-    end,
-})
-
-MiscTab:CreateSlider({
-    Name = "Размер персонажа",
-    Range = {20, 100},
-    Increment = 5,
-    Suffix = "%",
-    CurrentValue = 50,
-    Callback = function(Value)
-        _G.SizeScale = Value / 100
-        if _G.SizeEnabled then
-            local char = LocalPlayer.Character
-            if char then
-                saveOriginalSizes(char)
-                applySizeScale(char, _G.SizeScale)
-            end
+            disableGodMode()
+            notify("🚫 GOD MODE ВЫКЛЮЧЕН", "Вы снова уязвимы", 3)
         end
     end,
 })
