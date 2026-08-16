@@ -1,5 +1,5 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - ИСПРАВЛЕННАЯ ВЕРСИЯ
+-- MM2 ULTIMATE HUB - ESP + РАЗМЕР + АВТОФАРМ + АВТОСМЕРТЬ
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -18,7 +18,7 @@ local function notify(title, text, duration)
             Icon = "rbxassetid://4483362458"
         })
     end)
-end
+end)
 
 -- Настройки
 _G.ESPEnabled = true
