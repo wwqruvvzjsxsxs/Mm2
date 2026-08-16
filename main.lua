@@ -5,8 +5,8 @@
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
 local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
 
 -- Уведомления
 local function notify(title, text, duration)
@@ -84,73 +84,31 @@ local function isSafePosition(pos)
     return true
 end
 
--- Получение количества монет
+-- Получение количества монет (Улучшено для MM2)
 local function getCoinCount()
-    local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
-    if leaderstats then
-        for _, child in ipairs(leaderstats:GetChildren()) do
-            local name = child.Name:lower()
-            if (name:find("coin") or name:find("монет") or name:find("cash") or name:find("money")) and child:IsA("IntValue") then
-                return child.Value
-            end
+    pcall(function()
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui and playerGui:FindFirstChild("MainGUI") then
+            -- Читаем напрямую из интерфейса MM2
+            local coinText = playerGui.MainGUI.Game.CashBag.Container.CoinContainer.CoinTotal.Text
+            local current = tonumber(coinText:match("%d+"))
+            if current then return current end
         end
-    end
-    
-    -- Альтернативный способ
-    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if playerGui then
-        for _, gui in ipairs(playerGui:GetDescendants()) do
-            if gui:IsA("TextLabel") or gui:IsA("TextButton") then
-                local text = gui.Text:lower()
-                if text:find("coin") or text:find("монет") then
-                    local number = tonumber(text:match("%d+"))
-                    if number then
-                        return number
-                    end
-                end
-            end
-        end
-    end
-    
+    end)
     return 0
 end
 
--- Убить себя через респавн
+-- Убить себя (Переделано: Падение в пустоту гарантирует смерть в MM2)
 local function killSelf()
     local char = LocalPlayer.Character
-    if not char then return false end
-    
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return false end
-    
-    -- Способ 1: Прямое убийство через Health
-    hum.Health = 0
-    
-    -- Способ 2: Если не сработало, используем BreakJoints
-    task.wait(0.3)
-    if hum.Health > 0 then
-        pcall(function()
-            hum:BreakJoints()
-        end)
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        local hrp = char.HumanoidRootPart
+        -- Телепорт далеко вниз, игра убьет моментально
+        hrp.CFrame = CFrame.new(0, -9999, 0)
+        hrp.Velocity = Vector3.new(0, -500, 0)
+        return true
     end
-    
-    -- Способ 3: Принудительный респавн
-    task.wait(0.5)
-    if hum.Health > 0 then
-        pcall(function()
-            hum:ChangeState(Enum.HumanoidStateType.Dead)
-        end)
-    end
-    
-    -- Способ 4: Уничтожение персонажа
-    task.wait(0.5)
-    if char and char.Parent then
-        pcall(function()
-            char:Destroy()
-        end)
-    end
-    
-    return true
+    return false
 end
 
 -- Поиск монет
@@ -196,27 +154,23 @@ local function getNearestSafeCoin()
 end
 
 -- ========================================================
--- СИСТЕМА НЕУЯЗВИМОСТИ (GOD MODE)
+-- СИСТЕМА НЕУЯЗВИМОСТИ (УЛУЧШЕНА)
 -- ========================================================
+local originalSizes = {}
+
 local function enableGodMode()
     local char = LocalPlayer.Character
     if not char then return end
     
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-    
-    hum.MaxHealth = 999999
-    hum.Health = 999999
-    
-    for _, part in ipairs(char:GetDescendants()) do
+    -- Сжимаем хитбоксы, чтобы в нас было физически невозможно попасть
+    for _, part in ipairs(char:GetChildren()) do
         if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-            part.CanTouch = false
+            if not originalSizes[part] then
+                originalSizes[part] = part.Size
+            end
+            part.Size = Vector3.new(0.05, 0.05, 0.05)
+            part.CanCollide = false
         end
-    end
-    
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        hrp.CanTouch = true
     end
 end
 
@@ -224,30 +178,52 @@ local function disableGodMode()
     local char = LocalPlayer.Character
     if not char then return end
     
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-    
-    hum.MaxHealth = 100
-    hum.Health = 100
-    
-    for _, part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanTouch = true
+    -- Возвращаем нормальный размер
+    for part, size in pairs(originalSizes) do
+        if part and part.Parent then
+            part.Size = size
+            part.CanCollide = true
         end
     end
+    originalSizes = {}
 end
 
--- Мониторинг God Mode
+-- Мониторинг God Mode (Удаление ножей и авто-уклонение)
 task.spawn(function()
     while true do
-        task.wait(0.5)
-        if _G.GodMode then
-            enableGodMode()
+        task.wait(0.05) -- Быстрый цикл для уклонения
+        if _G.GodMode and isInGame() then
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            
+            if hrp then
+                -- 1. Уничтожаем брошенные в нас ножи
+                for _, obj in ipairs(Workspace:GetDescendants()) do
+                    if obj:IsA("BasePart") and (obj.Name == "Knife" or obj.Name == "ThrowingKnife") then
+                        local dist = (hrp.Position - obj.Position).Magnitude
+                        if dist < 12 then
+                            obj:Destroy()
+                        end
+                    end
+                end
+                
+                -- 2. Авто-додж (если мардер подошел вплотную)
+                local murdererPos, murdererPlayer = getMurdererPosition()
+                if murdererPos and murdererPlayer and murdererPlayer.Character then
+                    local mHrp = murdererPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    if mHrp then
+                        local dist = (hrp.Position - mHrp.Position).Magnitude
+                        if dist < 8 then
+                            -- Телепорт ему за спину и немного вверх
+                            hrp.CFrame = mHrp.CFrame * CFrame.new(0, 5, 5) 
+                        end
+                    end
+                end
+            end
         end
     end
 end)
 
--- Применяем God Mode при возрождении
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(0.5)
     if _G.GodMode then
@@ -329,7 +305,7 @@ end)
 Players.PlayerRemoving:Connect(removeHighlight)
 
 -- ========================================================
--- СИСТЕМА АВТО ФАРМА
+-- СИСТЕМА АВТО ФАРМА И АВТОКИЛЛА
 -- ========================================================
 local farmTween = nil
 local farmBodyVelocity = nil
@@ -393,18 +369,16 @@ local function expandCoinHitbox(coin)
     end)
 end
 
--- Отдельный мониторинг автокилла (проверка каждую секунду)
+-- Мониторинг Автокилла
 task.spawn(function()
     while true do
         task.wait(1)
-        
-        if _G.AutoKillEnabled and _G.AutoFarm then
+        if _G.AutoKillEnabled and _G.AutoFarm and isInGame() then
             local coinCount = getCoinCount()
-            
             if coinCount >= _G.AutoKillCoins and coinCount > 0 then
-                notify("💀 АВТОКИЛЛ", "Собрано " .. coinCount .. " монет! Умираю...", 5)
+                notify("💀 АВТОКИЛЛ", "Собрано " .. coinCount .. " монет! Убиваю персонажа...", 5)
                 killSelf()
-                task.wait(5) -- Ждем возрождения
+                task.wait(5) -- Пауза на время возрождения
             end
         end
     end
@@ -413,7 +387,7 @@ end)
 -- Главный цикл фарма
 task.spawn(function()
     while true do
-        task.wait(0.5)
+        task.wait(0.1)
         
         if _G.AutoFarm then
             if isInGame() then
@@ -446,20 +420,31 @@ task.spawn(function()
                             farmTween = TweenService:Create(root, TweenInfo.new(tweenTime, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
                             farmTween:Play()
                             farmTween.Completed:Wait()
-                            
-                            pcall(function()
-                                if firetouchinterest then
-                                    firetouchinterest(root, coin, 0)
-                                    firetouchinterest(root, coin, 1)
-                                end
-                            end)
                         else
                             disableFarmPhysics()
-                            
                             local targetY = coin.Position.Y + _G.FarmHeight
                             root.CFrame = CFrame.new(coin.Position.X, targetY, coin.Position.Z)
                             root.Velocity = Vector3.zero
                         end
+                        
+                        -- НОВОЕ: Микро-движения для точного подбора монеты
+                        local wiggleOffsets = {
+                            Vector3.new(1.5, 0, 0),
+                            Vector3.new(-1.5, 0, 0),
+                            Vector3.new(0, 0, 1.5),
+                            Vector3.new(0, 0, -1.5)
+                        }
+                        for _, offset in ipairs(wiggleOffsets) do
+                            root.CFrame = root.CFrame + offset
+                            task.wait(0.05)
+                        end
+                        
+                        pcall(function()
+                            if firetouchinterest then
+                                firetouchinterest(root, coin, 0)
+                                firetouchinterest(root, coin, 1)
+                            end
+                        end)
                         
                         task.wait(_G.FarmDelay)
                     else
@@ -483,7 +468,6 @@ task.spawn(function()
     end
 end)
 
--- Автоматический перезапуск при возрождении
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(1)
     
@@ -493,7 +477,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     
     if _G.AutoFarm then
         farmActive = false
-        notify("🪙 ФАРМ ПЕРЕЗАПУЩЕН", "Продолжаю сбор монет...", 3)
+        notify("🪙 ФАРМ", "Продолжаю сбор монет...", 3)
     end
 end)
 
@@ -631,7 +615,7 @@ FarmTab:CreateToggle({
     Callback = function(Value)
         _G.AutoKillEnabled = Value
         if Value then
-            notify("💀 АВТОКИЛЛ ВКЛЮЧЕН", "Вы умрете при " .. _G.AutoKillCoins .. " монетах", 3)
+            notify("💀 АВТОКИЛЛ ВКЛЮЧЕН", "Смерть при " .. _G.AutoKillCoins .. " монетах", 3)
         else
             notify("🚫 АВТОКИЛЛ ВЫКЛЮЧЕН", "Функция отключена", 3)
         end
@@ -640,13 +624,12 @@ FarmTab:CreateToggle({
 
 FarmTab:CreateSlider({
     Name = "Монет для смерти",
-    Range = {10, 100},
-    Increment = 5,
+    Range = {10, 50},
+    Increment = 1,
     Suffix = " монет",
     CurrentValue = _G.AutoKillCoins,
     Callback = function(Value)
         _G.AutoKillCoins = Value
-        notify("💀 НАСТРОЙКА", "Смерть при " .. Value .. " монетах", 2)
     end,
 })
 
@@ -654,13 +637,13 @@ FarmTab:CreateSlider({
 MiscTab:CreateSection("Неуязвимость")
 
 MiscTab:CreateToggle({
-    Name = "🛡️ Неуязвимость (God Mode)",
+    Name = "🛡️ Неуязвимость (God Mode / Auto Dodge)",
     CurrentValue = _G.GodMode,
     Callback = function(Value)
         _G.GodMode = Value
         if Value then
             enableGodMode()
-            notify("🛡️ GOD MODE ВКЛЮЧЕН", "Мардер не сможет вас убить!", 3)
+            notify("🛡️ GOD MODE ВКЛЮЧЕН", "Хитбоксы сжаты, уклонение активировано!", 3)
         else
             disableGodMode()
             notify("🚫 GOD MODE ВЫКЛЮЧЕН", "Вы снова уязвимы", 3)
@@ -668,4 +651,5 @@ MiscTab:CreateToggle({
     end,
 })
 
-notify("✅ СКРИПТ ЗАГРУЖЕН!", "Все функции активированы!", 5)
+notify("✅ СКРИПТ ОБНОВЛЕН!", "Новые функции активированы!", 5)
+
