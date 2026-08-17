@@ -1,119 +1,649 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - FIXED & FULL
+-- MM2 ULTIMATE HUB - С РАБОЧИМ АВТОКИЛЛОМ
 -- ========================================================
+
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
+local TweenService = game:GetService("TweenService")
 
+-- Уведомления
+local function notify(title, text, duration)
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = title,
+            Text = text,
+            Duration = duration or 5,
+            Button1 = "OK",
+            Icon = "rbxassetid://4483362458"
+        })
+    end)
+end
+
+-- Настройки
 _G.ESPEnabled = true
+_G.InnocentColor = Color3.fromRGB(0, 255, 0)
+_G.MurdererColor = Color3.fromRGB(255, 0, 0)
+_G.SheriffColor = Color3.fromRGB(0, 0, 255)
 _G.AutoFarm = false
 _G.FarmMode = "OnMap"
 _G.FarmDelay = 0.5
 _G.FarmHeight = -2.5
 _G.AutoKillEnabled = false
 _G.AutoKillCoins = 40
-_G.Noclip = false
-_G.Platform = nil
+_G.SafeDistance = 10
+_G.GodMode = false
 
--- Функция Noclip (работает всегда при включении)
-RunService.Stepped:Connect(function()
-    if _G.Noclip and LocalPlayer.Character then
-        for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
-            if part:IsA("BasePart") then part.CanCollide = false end
-        end
-    end
-end)
+-- ============================================
+-- НАСТРОЙКИ ИГРОКА (КАК У КЛОДА)
+-- ============================================
+local playerSettings = {}
 
--- Функция создания платформы
-local function createPlatform(pos)
-    if _G.Platform then _G.Platform:Destroy() end
-    local p = Instance.new("Part")
-    p.Name = "FarmPlatform"
-    p.Size = Vector3.new(10, 1, 10)
-    p.Position = pos
-    p.Anchored = true
-    p.CanCollide = true
-    p.Transparency = 0.8
-    p.Parent = Workspace
-    _G.Platform = p
+local function getSettings(player)
+    playerSettings[player] = playerSettings[player] or {
+        autoKillEnabled = false,
+        coinCount = 0,
+    }
+    return playerSettings[player]
 end
 
--- Основной цикл Фарма
+-- ============================================
+-- АВТОКИЛЛ (ПЕРЕРАБОТАННЫЙ)
+-- ============================================
+local function checkAutoKill(player)
+    local settings = getSettings(player)
+
+    if settings.coinCount >= _G.AutoKillCoins and _G.AutoKillEnabled then
+        local character = player.Character
+        local humanoid = character and character:FindFirstChild("Humanoid")
+
+        if humanoid and humanoid.Health > 0 then
+            settings.coinCount = 0
+            humanoid.Health = 0 -- Настоящая смерть
+            notify("💀 АВТОКИЛЛ", "Собрано " .. _G.AutoKillCoins .. " монет! Умираю...", 5)
+        end
+    end
+end
+
+-- Вызов при каждом подборе монетки
+local function onCoinCollected(player)
+    local settings = getSettings(player)
+    settings.coinCount += 1
+    checkAutoKill(player)
+end
+
+-- Синхронизация настроек
 task.spawn(function()
     while true do
-        task.wait(_G.FarmDelay)
-        if _G.AutoFarm and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            local hrp = LocalPlayer.Character.HumanoidRootPart
-            local targetCoin = nil
-            
-            -- Поиск всех монет
-            for _, obj in pairs(Workspace:GetChildren()) do
-                if (obj.Name == "Coin" or obj.Name == "GoldCoin") and obj:IsA("BasePart") then
-                    targetCoin = obj
-                    break
+        task.wait(0.5)
+        if _G.AutoKillEnabled then
+            getSettings(LocalPlayer).autoKillEnabled = true
+        else
+            getSettings(LocalPlayer).autoKillEnabled = false
+        end
+    end
+end)
+
+-- Сброс счётчика при возрождении
+LocalPlayer.CharacterAdded:Connect(function()
+    getSettings(LocalPlayer).coinCount = 0
+end)
+
+-- ========================================================
+-- ОСТАЛЬНЫЕ ФУНКЦИИ
+-- ========================================================
+
+local originalGravity = Workspace.Gravity
+
+-- Определение роли
+local function getMM2Role(player)
+    local char = player.Character
+    if not char then return "Innocent" end
+    
+    if char:FindFirstChild("Knife") or (player:FindFirstChild("Backpack") and player.Backpack:FindFirstChild("Knife")) then
+        return "Murderer"
+    elseif char:FindFirstChild("Gun") or (player:FindFirstChild("Backpack") and player.Backpack:FindFirstChild("Gun")) then
+        return "Sheriff"
+    end
+    
+    return "Innocent"
+end
+
+-- Проверка: в игре ли мы
+local function isInGame()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    return hum and hum.Health > 0
+end
+
+-- Получение позиции мардера
+local function getMurdererPosition()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local role = getMM2Role(player)
+            if role == "Murderer" then
+                local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    return hrp.Position, player
                 end
             end
-            
-            if targetCoin then
-                local targetPos = Vector3.new(targetCoin.Position.X, targetCoin.Position.Y + _G.FarmHeight, targetCoin.Position.Z)
-                
-                -- Режим "Под картой"
-                if _G.FarmMode == "UnderMap" then
-                    createPlatform(targetPos + Vector3.new(0, -1, 0))
-                else
-                    if _G.Platform then _G.Platform:Destroy(); _G.Platform = nil end
-                end
-                
-                -- Телепорт
-                hrp.CFrame = CFrame.new(targetPos)
-                
-                -- Микро-движения
-                for i=1, 2 do
-                    hrp.CFrame = hrp.CFrame + Vector3.new(math.random(-1,1), 0, math.random(-1,1))
-                    task.wait(0.05)
-                end
-                
-                -- Автокилл
-                if _G.AutoKillEnabled then
-                    local count = 0
-                    pcall(function() count = tonumber(LocalPlayer.PlayerGui.MainGUI.Game.CashBag.Container.CoinContainer.CoinTotal.Text:match("%d+")) end)
-                    if count and count >= _G.AutoKillCoins then
-                        hrp.CFrame = CFrame.new(0, -9999, 0)
-                    end
-                end
+        end
+    end
+    return nil, nil
+end
+
+-- Проверка безопасности позиции
+local function isSafePosition(pos)
+    local murdererPos = getMurdererPosition()
+    if murdererPos then
+        local distance = (pos - murdererPos).Magnitude
+        return distance >= _G.SafeDistance
+    end
+    return true
+end
+
+-- Поиск монет
+local function findAllCoins()
+    local coins = {}
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") or obj:IsA("MeshPart") then
+            local name = obj.Name:lower()
+            if (name:find("coin") or name:find("монет")) and obj.Transparency < 0.9 then
+                table.insert(coins, obj)
+            end
+        end
+    end
+    return coins
+end
+
+-- Поиск ближайшей безопасной монеты
+local function getNearestSafeCoin()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    local root = char.HumanoidRootPart
+
+    local nearestCoin = nil
+    local minDistance = 999999
+    local murdererPos = getMurdererPosition()
+
+    for _, coin in ipairs(findAllCoins()) do
+        if murdererPos then
+            local distanceToMurderer = (coin.Position - murdererPos).Magnitude
+            if distanceToMurderer < _G.SafeDistance then
+                continue
+            end
+        end
+        
+        local dist = (root.Position - coin.Position).Magnitude
+        if dist < minDistance then
+            minDistance = dist
+            nearestCoin = coin
+        end
+    end
+    
+    return nearestCoin
+end
+
+-- ========================================================
+-- СИСТЕМА НЕУЯЗВИМОСТИ (GOD MODE)
+-- ========================================================
+local function enableGodMode()
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    
+    hum.MaxHealth = 999999
+    hum.Health = 999999
+    
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            part.CanTouch = false
+        end
+    end
+    
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.CanTouch = true
+    end
+end
+
+local function disableGodMode()
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    
+    hum.MaxHealth = 100
+    hum.Health = 100
+    
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanTouch = true
+        end
+    end
+end
+
+-- Мониторинг God Mode
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if _G.GodMode then
+            enableGodMode()
+        end
+    end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(0.5)
+    if _G.GodMode then
+        enableGodMode()
+    end
+end)
+
+-- ========================================================
+-- ESP СИСТЕМА
+-- ========================================================
+local activeHighlights = {}
+
+local function removeHighlight(player)
+    if activeHighlights[player] then
+        if activeHighlights[player].Parent then
+            activeHighlights[player]:Destroy()
+        end
+        activeHighlights[player] = nil
+    end
+end
+
+local function updatePlayerESP(player)
+    if player == LocalPlayer then return end
+    
+    local char = player.Character
+    if not char then
+        removeHighlight(player)
+        return
+    end
+
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then
+        removeHighlight(player)
+        return
+    end
+
+    local role = getMM2Role(player)
+    local targetColor = _G.InnocentColor
+
+    if role == "Murderer" then
+        targetColor = _G.MurdererColor
+    elseif role == "Sheriff" then
+        targetColor = _G.SheriffColor
+    end
+
+    local hl = activeHighlights[player]
+    if not hl or hl.Parent ~= char then
+        removeHighlight(player)
+        hl = Instance.new("Highlight")
+        hl.Name = "MM2_ESP_Highlight"
+        hl.FillColor = targetColor
+        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+        hl.FillTransparency = 0.3
+        hl.OutlineTransparency = 0
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Parent = char
+        activeHighlights[player] = hl
+    else
+        hl.FillColor = targetColor
+        hl.FillTransparency = 0.3
+    end
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        if _G.ESPEnabled then
+            for _, player in ipairs(Players:GetPlayers()) do
+                updatePlayerESP(player)
             end
         else
-            if _G.Platform then _G.Platform:Destroy(); _G.Platform = nil end
-        end
-    end
-end)
-
--- Интерфейс (Rayfield)
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-local Window = Rayfield:CreateWindow({Name = "MM2 Ultimate Hub", LoadingTitle = "MM2", KeySystem = false})
-
-local Tab1 = Window:CreateTab("Фарм", 4483362458)
-Tab1:CreateToggle({Name = "Авто Фарм", Callback = function(v) _G.AutoFarm = v end})
-Tab1:CreateDropdown({Name = "Режим", Options = {"На карте", "Под картой"}, Callback = function(o) _G.FarmMode = (o[1] == "На карте" and "OnMap" or "UnderMap") end})
-Tab1:CreateToggle({Name = "Noclip (Сквозь стены)", Callback = function(v) _G.Noclip = v end})
-Tab1:CreateSlider({Name = "Задержка (скорость)", Range = {0.1, 1}, Increment = 0.1, CurrentValue = 0.5, Callback = function(v) _G.FarmDelay = v end})
-Tab1:CreateSlider({Name = "Высота", Range = {-10, 5}, Increment = 0.5, CurrentValue = -2.5, Callback = function(v) _G.FarmHeight = v end})
-
-local Tab2 = Window:CreateTab("Визуал", 4483362458)
-Tab2:CreateToggle({Name = "ESP Игроков", Callback = function(v) _G.ESPEnabled = v end})
--- ESP Цикл (полный)
-RunService.RenderStepped:Connect(function()
-    if not _G.ESPEnabled then 
-        for _, p in pairs(Players:GetPlayers()) do if p.Character and p.Character:FindFirstChild("Highlight") then p.Character.Highlight:Destroy() end end
-        return 
-    end
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character then
-            if not p.Character:FindFirstChild("Highlight") then
-                local h = Instance.new("Highlight", p.Character)
-                h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            for player, _ in pairs(activeHighlights) do
+                removeHighlight(player)
             end
         end
     end
 end)
+
+Players.PlayerRemoving:Connect(removeHighlight)
+
+-- ========================================================
+-- СИСТЕМА АВТО ФАРМА
+-- ========================================================
+local farmTween = nil
+local farmBodyVelocity = nil
+local farmActive = false
+
+local function enableUnderMapPhysics()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local hrp = char.HumanoidRootPart
+    
+    if not farmBodyVelocity or farmBodyVelocity.Parent ~= hrp then
+        if farmBodyVelocity then farmBodyVelocity:Destroy() end
+        farmBodyVelocity = Instance.new("BodyVelocity")
+        farmBodyVelocity.Name = "FarmAntiFall"
+        farmBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        farmBodyVelocity.Velocity = Vector3.zero
+        farmBodyVelocity.Parent = hrp
+    end
+end
+
+local function disableFarmPhysics()
+    if farmBodyVelocity then
+        farmBodyVelocity:Destroy()
+        farmBodyVelocity = nil
+    end
+    if farmTween then
+        farmTween:Cancel()
+        farmTween = nil
+    end
+end
+
+local function getUnderMapPosition(coinPos)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    
+    local ignoreList = {}
+    if LocalPlayer.Character then table.insert(ignoreList, LocalPlayer.Character) end
+    for _, coin in ipairs(findAllCoins()) do table.insert(ignoreList, coin) end
+    raycastParams.FilterDescendantsInstances = ignoreList
+
+    local rayResult = Workspace:Raycast(coinPos, Vector3.new(0, -30, 0), raycastParams)
+    
+    if rayResult then
+        return Vector3.new(coinPos.X, rayResult.Position.Y + _G.FarmHeight, coinPos.Z)
+    else
+        return Vector3.new(coinPos.X, coinPos.Y + _G.FarmHeight - 2, coinPos.Z)
+    end
+end
+
+local function expandCoinHitbox(coin)
+    pcall(function()
+        if coin:IsA("BasePart") then
+            if not coin:GetAttribute("OriginalSize") then
+                coin:SetAttribute("OriginalSize", coin.Size)
+            end
+            local originalSize = coin:GetAttribute("OriginalSize")
+            coin.Size = Vector3.new(originalSize.X * 3, originalSize.Y * 3, originalSize.Z * 3)
+            coin.CanCollide = false
+            coin.Transparency = 0.3
+        end
+    end)
+end
+
+-- Главный цикл фарма (с подсчётом монет для автокилла)
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        
+        if _G.AutoFarm then
+            if isInGame() then
+                farmActive = true
+                
+                local char = LocalPlayer.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                
+                if root and hum and hum.Health > 0 then
+                    local coin = getNearestSafeCoin()
+                    
+                    if coin and isSafePosition(coin.Position) then
+                        expandCoinHitbox(coin)
+                        
+                        if _G.FarmMode == "UnderMap" then
+                            for _, part in ipairs(char:GetDescendants()) do
+                                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                                    part.CanCollide = false
+                                end
+                            end
+                            
+                            enableUnderMapPhysics()
+                            
+                            local targetPos = getUnderMapPosition(coin.Position)
+                            local distance = (root.Position - targetPos).Magnitude
+                            local speed = 30
+                            local tweenTime = math.clamp(distance / speed, 0.1, _G.FarmDelay)
+                            
+                            farmTween = TweenService:Create(root, TweenInfo.new(tweenTime, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
+                            farmTween:Play()
+                            farmTween.Completed:Wait()
+                            
+                            pcall(function()
+                                if firetouchinterest then
+                                    firetouchinterest(root, coin, 0)
+                                    firetouchinterest(root, coin, 1)
+                                end
+                            end)
+                            
+                            -- Вызываем onCoinCollected при сборе
+                            onCoinCollected(LocalPlayer)
+                        else
+                            disableFarmPhysics()
+                            
+                            local targetY = coin.Position.Y + _G.FarmHeight
+                            root.CFrame = CFrame.new(coin.Position.X, targetY, coin.Position.Z)
+                            root.Velocity = Vector3.zero
+                            
+                            -- Вызываем onCoinCollected при сборе
+                            onCoinCollected(LocalPlayer)
+                        end
+                        
+                        task.wait(_G.FarmDelay)
+                    else
+                        task.wait(0.5)
+                    end
+                end
+            else
+                if farmActive then
+                    farmActive = false
+                    disableFarmPhysics()
+                end
+                task.wait(1)
+            end
+        else
+            if farmActive then
+                farmActive = false
+                disableFarmPhysics()
+            end
+            task.wait(0.5)
+        end
+    end
+end)
+
+-- Автоматический перезапуск при возрождении
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(1)
+    
+    if _G.GodMode then
+        enableGodMode()
+    end
+    
+    if _G.AutoFarm then
+        farmActive = false
+        notify("🪙 ФАРМ ПЕРЕЗАПУЩЕН", "Продолжаю сбор монет...", 3)
+    end
+end)
+
+-- ========================================================
+-- ИНТЕРФЕЙС
+-- ========================================================
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "MM2 Ultimate Hub",
+    LoadingTitle = "MM2 Script",
+    LoadingSubtitle = "ESP + Farm + GodMode + AutoKill",
+    ConfigurationSaving = { Enabled = false },
+    KeySystem = false
+})
+
+local VisualTab = Window:CreateTab("👁️ Визуализация", 4483362458)
+local FarmTab = Window:CreateTab("🪙 Фарм", 4483362458)
+local MiscTab = Window:CreateTab("🔧 Прочее", 4483362458)
+
+-- ВКЛАДКА: ВИЗУАЛИЗАЦИЯ
+VisualTab:CreateSection("ESP Настройки")
+
+VisualTab:CreateToggle({
+    Name = "👁️ ESP / Подсветка игроков",
+    CurrentValue = _G.ESPEnabled,
+    Callback = function(Value)
+        _G.ESPEnabled = Value
+        notify(Value and "👁️ ESP ВКЛЮЧЕН" or "🚫 ESP ВЫКЛЮЧЕН", "", 3)
+    end,
+})
+
+VisualTab:CreateSection("Цвета ролей")
+
+VisualTab:CreateColorPicker({
+    Name = "🟢 Цвет невинных",
+    Color = _G.InnocentColor,
+    Callback = function(Value)
+        _G.InnocentColor = Value
+    end,
+})
+
+VisualTab:CreateColorPicker({
+    Name = "🔴 Цвет мардера",
+    Color = _G.MurdererColor,
+    Callback = function(Value)
+        _G.MurdererColor = Value
+    end,
+})
+
+VisualTab:CreateColorPicker({
+    Name = "🔵 Цвет шерифа",
+    Color = _G.SheriffColor,
+    Callback = function(Value)
+        _G.SheriffColor = Value
+    end,
+})
+
+-- ВКЛАДКА: ФАРМ
+FarmTab:CreateSection("Авто фарм")
+
+FarmTab:CreateToggle({
+    Name = "🪙 Авто фарм монет",
+    CurrentValue = _G.AutoFarm,
+    Callback = function(Value)
+        _G.AutoFarm = Value
+        if Value then
+            if not isInGame() then
+                notify("⏳ ФАРМ ВКЛЮЧЕН", "Начнется когда вы зайдете в раунд", 3)
+            else
+                notify("🪙 ФАРМ ВКЛЮЧЕН", "Собираю монеты...", 3)
+            end
+        else
+            farmActive = false
+            disableFarmPhysics()
+            notify("🚫 ФАРМ ВЫКЛЮЧЕН", "Остановлен", 3)
+        end
+    end,
+})
+
+FarmTab:CreateDropdown({
+    Name = "Режим фарма",
+    Options = {"На карте", "Под картой"},
+    CurrentOption = {"На карте"},
+    MultipleOptions = false,
+    Callback = function(Option)
+        if Option[1] == "На карте" then
+            _G.FarmMode = "OnMap"
+            disableFarmPhysics()
+        else
+            _G.FarmMode = "UnderMap"
+        end
+        notify("🔄 РЕЖИМ ФАРМА", "Выбран: " .. Option[1], 3)
+    end,
+})
+
+FarmTab:CreateSlider({
+    Name = "Скорость сборки монет",
+    Range = {0.5, 3},
+    Increment = 0.1,
+    Suffix = "сек",
+    CurrentValue = _G.FarmDelay,
+    Callback = function(Value)
+        _G.FarmDelay = Value
+    end,
+})
+
+FarmTab:CreateSlider({
+    Name = "Высота сбора монет",
+    Range = {-10, 10},
+    Increment = 0.5,
+    Suffix = " блоков",
+    CurrentValue = -2.5,
+    Callback = function(Value)
+        _G.FarmHeight = Value
+    end,
+})
+
+FarmTab:CreateSlider({
+    Name = "Безопасная дистанция от мардера",
+    Range = {5, 30},
+    Increment = 1,
+    Suffix = " блоков",
+    CurrentValue = 10,
+    Callback = function(Value)
+        _G.SafeDistance = Value
+    end,
+})
+
+FarmTab:CreateSection("Автокилл")
+
+FarmTab:CreateToggle({
+    Name = "💀 Убить при заполнении рюкзака",
+    CurrentValue = _G.AutoKillEnabled,
+    Callback = function(Value)
+        _G.AutoKillEnabled = Value
+        if Value then
+            notify("💀 АВТОКИЛЛ ВКЛЮЧЕН", "Вы умрете при " .. _G.AutoKillCoins .. " монетах", 3)
+        else
+            notify("🚫 АВТОКИЛЛ ВЫКЛЮЧЕН", "Функция отключена", 3)
+        end
+    end,
+})
+
+FarmTab:CreateSlider({
+    Name = "Монет для смерти",
+    Range = {10, 100},
+    Increment = 5,
+    Suffix = " монет",
+    CurrentValue = _G.AutoKillCoins,
+    Callback = function(Value)
+        _G.AutoKillCoins = Value
+        notify("💀 НАСТРОЙКА", "Смерть при " .. Value .. " монетах", 2)
+    end,
+})
+
+-- ВКЛАДКА: ПРОЧЕЕ
+MiscTab:CreateSection("Неуязвимость")
+
+MiscTab:CreateToggle({
+    Name = "🛡️ Неуязвимость (God Mode)",
+    CurrentValue = _G.GodMode,
+    Callback = function(Value)
+        _G.GodMode = Value
+        if Value then
+            enableGodMode()
+            notify("🛡️ GOD MODE ВКЛЮЧЕН", "Мардер не сможет вас убить!", 3)
+        else
+            disableGodMode()
+            notify("🚫 GOD MODE ВЫКЛЮЧЕН", "Вы снова уязвимы", 3)
+        end
+    end,
+})
+
+notify("✅ СКРИПТ ЗАГРУЖЕН!", "Все функции активированы!", 5)
