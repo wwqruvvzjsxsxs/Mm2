@@ -1,5 +1,5 @@
 -- ========================================================
--- MM2 ULTIMATE HUB - С РАБОЧИМ АВТОКИЛЛОМ
+-- MM2 ULTIMATE HUB - ESP + АВТОФАРМ + АВТОСМЕРТЬ + НЕУЯЗВИМОСТЬ + ХИТБОКС
 -- ========================================================
 
 local Players = game:GetService("Players")
@@ -7,6 +7,7 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- Уведомления
 local function notify(title, text, duration)
@@ -34,9 +35,10 @@ _G.AutoKillEnabled = false
 _G.AutoKillCoins = 40
 _G.SafeDistance = 10
 _G.GodMode = false
+_G.HitboxEnabled = false -- Увеличенный хитбокс
 
 -- ============================================
--- НАСТРОЙКИ ИГРОКА (КАК У КЛОДА)
+-- НАСТРОЙКИ ИГРОКА (ДЛЯ АВТОКИЛЛА)
 -- ============================================
 local playerSettings = {}
 
@@ -49,7 +51,7 @@ local function getSettings(player)
 end
 
 -- ============================================
--- АВТОКИЛЛ (ПЕРЕРАБОТАННЫЙ)
+-- АВТОКИЛЛ
 -- ============================================
 local function checkAutoKill(player)
     local settings = getSettings(player)
@@ -60,34 +62,100 @@ local function checkAutoKill(player)
 
         if humanoid and humanoid.Health > 0 then
             settings.coinCount = 0
-            humanoid.Health = 0 -- Настоящая смерть
+            humanoid.Health = 0
             notify("💀 АВТОКИЛЛ", "Собрано " .. _G.AutoKillCoins .. " монет! Умираю...", 5)
         end
     end
 end
 
--- Вызов при каждом подборе монетки
 local function onCoinCollected(player)
     local settings = getSettings(player)
     settings.coinCount += 1
     checkAutoKill(player)
 end
 
--- Синхронизация настроек
+-- Синхронизация настроек автокилла
 task.spawn(function()
     while true do
         task.wait(0.5)
-        if _G.AutoKillEnabled then
-            getSettings(LocalPlayer).autoKillEnabled = true
-        else
-            getSettings(LocalPlayer).autoKillEnabled = false
-        end
+        getSettings(LocalPlayer).autoKillEnabled = _G.AutoKillEnabled
     end
 end)
 
 -- Сброс счётчика при возрождении
 LocalPlayer.CharacterAdded:Connect(function()
     getSettings(LocalPlayer).coinCount = 0
+end)
+
+-- ============================================
+-- HITBOX MAGNETISM SYSTEM (УВЕЛИЧЕННЫЙ ХИТБОКС)
+-- ============================================
+local HitboxConfig = {
+    baseRadius = 3.0,
+    useDynamicRadius = true,
+    closeRange = 20,
+    closeRadius = 3.5,
+    midRange = 50,
+    midRadius = 2.0,
+    farRadius = 1.0,
+    requireLineOfSight = true,
+}
+
+local function getMagnetRadius(distance)
+    if not HitboxConfig.useDynamicRadius then
+        return HitboxConfig.baseRadius
+    end
+
+    if distance < HitboxConfig.closeRange then
+        return HitboxConfig.closeRadius
+    elseif distance < HitboxConfig.midRange then
+        return HitboxConfig.midRadius
+    else
+        return HitboxConfig.farRadius
+    end
+end
+
+-- Увеличение хитбокса для врагов
+local function applyHitboxExpansion()
+    if not _G.HitboxEnabled then return end
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+            
+            if humanoid and humanoid.Health > 0 then
+                -- Увеличиваем размер хитбокса
+                local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    -- Добавляем невидимую часть для увеличения хитбокса
+                    local hitboxExtender = player.Character:FindFirstChild("HitboxExtender")
+                    
+                    if not hitboxExtender then
+                        hitboxExtender = Instance.new("Part")
+                        hitboxExtender.Name = "HitboxExtender"
+                        hitboxExtender.Size = Vector3.new(6, 6, 6) -- Увеличенный размер
+                        hitboxExtender.Transparency = 1
+                        hitboxExtender.CanCollide = false
+                        hitboxExtender.Anchored = false
+                        hitboxExtender.Parent = player.Character
+                    end
+                    
+                    -- Прикрепляем к HumanoidRootPart
+                    hitboxExtender.CFrame = hrp.CFrame
+                end
+            end
+        end
+    end
+end
+
+-- Мониторинг хитбокса
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if _G.HitboxEnabled then
+            applyHitboxExpansion()
+        end
+    end
 end)
 
 -- ========================================================
@@ -382,7 +450,7 @@ local function expandCoinHitbox(coin)
     end)
 end
 
--- Главный цикл фарма (с подсчётом монет для автокилла)
+-- Главный цикл фарма
 task.spawn(function()
     while true do
         task.wait(0.5)
@@ -426,7 +494,6 @@ task.spawn(function()
                                 end
                             end)
                             
-                            -- Вызываем onCoinCollected при сборе
                             onCoinCollected(LocalPlayer)
                         else
                             disableFarmPhysics()
@@ -435,7 +502,6 @@ task.spawn(function()
                             root.CFrame = CFrame.new(coin.Position.X, targetY, coin.Position.Z)
                             root.Velocity = Vector3.zero
                             
-                            -- Вызываем onCoinCollected при сборе
                             onCoinCollected(LocalPlayer)
                         end
                         
@@ -483,7 +549,7 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Window = Rayfield:CreateWindow({
     Name = "MM2 Ultimate Hub",
     LoadingTitle = "MM2 Script",
-    LoadingSubtitle = "ESP + Farm + GodMode + AutoKill",
+    LoadingSubtitle = "ESP + Farm + GodMode + AutoKill + Hitbox",
     ConfigurationSaving = { Enabled = false },
     KeySystem = false
 })
@@ -642,6 +708,21 @@ MiscTab:CreateToggle({
         else
             disableGodMode()
             notify("🚫 GOD MODE ВЫКЛЮЧЕН", "Вы снова уязвимы", 3)
+        end
+    end,
+})
+
+MiscTab:CreateSection("Хитбокс")
+
+MiscTab:CreateToggle({
+    Name = "🎯 Увеличенный хитбокс",
+    CurrentValue = _G.HitboxEnabled,
+    Callback = function(Value)
+        _G.HitboxEnabled = Value
+        if Value then
+            notify("🎯 ХИТБОКС ВКЛЮЧЕН", "Врагов легче убивать!", 3)
+        else
+            notify("🚫 ХИТБОКС ВЫКЛЮЧЕН", "Хитбоксы обычные", 3)
         end
     end,
 })
